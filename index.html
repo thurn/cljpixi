@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <head>
+  	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <script>
+      SCRIPT_COUNT = 2;
+      scriptLoaded = function() {
+        window.console.log("script loaded: " + SCRIPT_COUNT);
+        SCRIPT_COUNT--;
+        if (SCRIPT_COUNT == 0) tin.core.main()
+      };
+    </script>
+  </head>
+  <body>
+    <script async onload="scriptLoaded()" src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/1.6.1/pixi.js"></script>
+    <script async onload="scriptLoaded()" src="out/tin.js"></script>
+  </body>
+</html>
