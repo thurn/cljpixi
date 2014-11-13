@@ -1,40 +1,97 @@
 (ns tin.core)
 (enable-console-print!)
 
-(defrecord Point [x y])
+(defn- new-point [x y]
+  (let [Point (.-Point js/PIXI)]
+    (Point. x y)))
 
-(defrecord Rectangle [x y width height])
+(defn- new-rectangle [x y width height]
+  (let [Rectangle (.-Rectangle js/PIXI)]
+    (Rectangle. x y width height)))
 
-(defrecord Circle [x y radius])
+(defn- new-circle [x y radius]
+  (let [Circle (.-Circle js/PIXI)]
+    (Circle. x y radius)))
 
-(defrecord Ellipse [x y width height])
+(defn- new-ellipse [x y width height]
+  (let [Ellipse (.-Ellipse js/PIXI)]
+    (Ellipse. x y width height)))
 
-(defrecord Polygon [points])
+(defn- new-polygon [points]
+  (let [Polygon (.-Polygon js/PIXI)]
+    (Polygon. points)))
 
-(defrecord Stage [display-object background-color])
+(defn- new-movie-clip [textures]
+  (let [MovieClip (.-MovieClip js/PIXI)]
+    (MovieClip. textures)))
 
-(defrecord DisplayObject [alpha button-mode default-cursor filter-area filters
-  hit-area interactive mask  pivot position renderable? rotation scale visible?
-  x y])
+(defn- new-text [text style]
+  (let [Text (.-Text js/PIXI)]
+    (Text. text style)))
 
-(defrecord DisplayObjectContainer [height width display-object])
+(defn- new-tiling-sprite [texture width height]
+  (let [TilingSprite (.-TilingSprite js/PIXI)]
+    (TilingSprite. texture width height)))
 
-(defrecord Sprite [anchor blend-mode texture tint display-object-container])
+(defn- new-stage [background-color]
+  (let [Stage (.-Stage js/PIXI)]
+    (Stage. background-color)))
 
-(defrecord MovieClip [animation-speed loop textures sprite])
+(defn- new-sprite [texture]
+  (let [Sprite (.-Sprite js/PIXI)]
+    (Sprite. texture)))
 
-(defrecord BaseTexture [scale-mode source])
+(defn- set-property
+  "Sets a property on a pixi.js object. Maps keywords to known properties, but
+  does not ensure the object is of the correct type."
+  [object key value]
+  (case key
+    :alpha (set! (.-alpha object) value)
+    :anchor (set! (.-anchor object) value)
+    :animation-speed (set! (.-animationSpeed object) value)
+    :blend-mode (set! (.-blendMode object) value)
+    :button-mode (set! (.-buttonMode object) value)
+    :canvas (set! (.-canvas object) value)
+    :context (set! (.-context object) value)
+    :default-cursor (set! (.-defaultCursor object) value)
+    :filter-area (set! (.-filterArea object) value)
+    :filters (set! (.-filters object) value)
+    :frame (set! (.-frame object) value)
+    :height (set! (.-height object) value)
+    :hit-area (set! (.-hitArea object) value)
+    :interactive? (set! (.-interactive object) value)
+    :mask (set! (.-mask object) value)
+    :pivot (set! (.-pivot object) value)
+    :points (set! (.-points object) value)
+    :position (set! (.-position object) value)
+    :radius (set! (.-radius object) value)
+    :rotation (set! (.-rotation object) value)
+    :scale (set! (.-scale object) value)
+    :scale-mode (set! (.-scaleMode object) value)
+    :source (set! (.-source object) value)
+    :style (set! (.-style object) value)
+    :text (set! (.-text object) value)
+    :texture (set! (.-texture object) value)
+    :textures (set! (.-textures object) value)
+    :tile-position (set! (.-tilePosition object) value)
+    :tile-scale (set! (.-tileScale object) value)
+    :tile-scale-offset (set! (.-tileScaleOffset object) value)
+    :visible? (set! (.-visible object) value)
+    :width (set! (.-width object) value)
+    :x (set! (.-x object) value)
+    :y (set! (.-x object) value)))
 
-(defrecord Texture [base-texture frame height trim width])
+(def stage
+  "The global Stage object which coordinates all on-screen drawing. You must
+  call initialize before any other drawing operations to create the Stage."
+  (atom nil))
 
-(defrecord Text [text style canvas context sprite])
-
-(defrecord TilingSprite [texture width height tile-position tile-scale tile-scale-offset sprite])
-
-(defn set-properties [map object]
-  "Takes a pixi.js object and sets values from the map as properties on the
-   object when they correspond to known properties."
-  (doseq [key value]
+(defn initialize [background-color]
+  "The function to create the pixi.js Stage and Renderer objects which manage
+  all drawing. You are responsible for calling this function once pixi.js is
+  done loading. Returns a <canvas> DOM node which will be rendered to -- you
+  are responsible for attaching this node to the browser DOM."
+  (reset! stage (new-stage background-color)))
 
 (defn ^:export main []
   (def Stage (.-Stage js/PIXI))
