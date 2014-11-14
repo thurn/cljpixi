@@ -1,6 +1,16 @@
 (ns tin.core)
 (enable-console-print!)
 
+(def ^:private stage
+  "The global Stage object which coordinates all on-screen drawing. You must
+  call initialize before any other drawing operations to create the Stage."
+  (atom nil))
+
+(def ^:private renderer
+  "The global Renderer object which draws to the canvas. You must call
+  initialize to create the Renderer before doing any rendering."
+  (atom nil))
+
 (defn- new-point [x y]
   (let [Point (.-Point js/PIXI)]
     (Point. x y)))
@@ -41,7 +51,16 @@
   (let [Sprite (.-Sprite js/PIXI)]
     (Sprite. texture)))
 
-(defn- set-property
+(defn- image->texture [image-url]
+  (.fromImage (.-Texture js/PIXI) image-url))
+
+(defn- frame->texture [frame-id]
+  (.fromFrame (.-Texture js/PIXI) frame-id))
+
+(defn- canvas->texture [canvas]
+  (.fromCanvas (.-Texture js/PIXI) canvas))
+
+(defn- set-property!
   "Sets a property on a pixi.js object. Maps keywords to known properties, but
   does not ensure the object is of the correct type."
   [object key value]
@@ -81,41 +100,40 @@
     :x (set! (.-x object) value)
     :y (set! (.-x object) value)))
 
-(def stage
-  "The global Stage object which coordinates all on-screen drawing. You must
-  call initialize before any other drawing operations to create the Stage."
-  (atom nil))
+(defn- animate-loop []
+  (js/requestAnimFrame animate-loop)
+  (.render @renderer @stage))
 
-(defn initialize [background-color]
+(defn- add-to-stage!
+  "Adds a new child to the global Stage object."
+  [object]
+  (.addChild @stage object))
+
+(defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
-  all drawing. You are responsible for calling this function once pixi.js is
-  done loading. Returns a <canvas> DOM node which will be rendered to -- you
-  are responsible for attaching this node to the browser DOM."
-  (reset! stage (new-stage background-color)))
+  all drawing.
+
+  You are responsible for calling this function once pixi.js is done loading.
+  Returns a <canvas> DOM node which will be rendered to -- you are responsible
+  for attaching this node to the browser DOM."
+  [& {:keys [width height background-color]
+      :or {width 500, height 500, background-color 0xFFFFFF}}]
+    (reset! stage (new-stage background-color))
+    (reset! renderer (.autoDetectRenderer js/PIXI width height))
+    (animate-loop)
+    (.-view @renderer))
 
 (defn ^:export main []
-  (def Stage (.-Stage js/PIXI))
-  (def Texture (.-Texture js/PIXI))
-  (def Sprite (.-Sprite js/PIXI))
+  (.appendChild (.-body js/document)
+    (initialize :width 400 :height 300 :background-color 0x66FF99))
 
-  (def stage (Stage. 0x66FF99))
-  (def renderer (.autoDetectRenderer js/PIXI 400 300))
-  (.appendChild (.-body js/document) (.-view renderer))
-
-  (def texture (.fromImage Texture "bunny.png"))
-  (def bunny (Sprite. texture))
+  (def texture (image->texture "bunny.png"))
+  (def bunny (new-sprite texture))
   (set! (.-x (.-anchor bunny)) 0.5)
   (set! (.-y (.-anchor bunny)) 0.5)
   (set! (.-x (.-position bunny)) 200)
   (set! (.-y (.-position bunny)) 150)
 
-  (.addChild stage bunny)
-
-  (defn animate []
-    (js/requestAnimFrame animate)
-    (set! (.-rotation bunny) (+ 0.1 (.-rotation bunny)))
-    (.render renderer stage))
-
-  (js/requestAnimFrame animate)
+  (.addChild @stage bunny)
 
   (prn "Loaded"))
