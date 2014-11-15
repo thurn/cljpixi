@@ -1,4 +1,9 @@
-(ns tin.core)
+(ns tin.core
+  (:require
+   [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
+                            alts! timeout]])
+  (:require-macros [cljs.core.async.macros :refer [go alt!]]))
+
 (enable-console-print!)
 
 (def ^:private stage
@@ -10,6 +15,8 @@
   "The global Renderer object which draws to the canvas. You must call
   initialize to create the Renderer before doing any rendering."
   (atom nil))
+
+(def ^:private channel-buffer-size 10)
 
 (defn- new-point [x y]
   (let [Point (.-Point js/PIXI)]
@@ -109,31 +116,67 @@
   [object]
   (.addChild @stage object))
 
+(defn- handle-point
+  "Instantiates and returns a new pixi.js Point from a message"
+  [[:point x y]]
+  (new-point x y))
+
+(defn- handle-texture
+  "Instantiates and returns a new pixi.js Texture from a message"
+  [[:texture [type argument] properties]]
+  (let [texture
+    (case type
+      :image (image->texture argument)
+      :frame (frame->texture argument)
+      :canvas (canvas->texture argument))]
+    texture))
+
+(defn- handle-sprite
+  "Instantiates and returns a new pixi.js Sprite, which is also immediately
+   added as a child of the global Scene."
+  [[:sprite name texture properties]]
+  (let [sprite (new-sprite (handle-texture texture))]))
+
+
+(defn- handle-message
+  "Parses the provided message and renders the contents to the canvas."
+  [message]
+  (case (first message)
+    :point (handle-point message)
+    :texture (handle-texture message)
+    :sprite (handle-sprite message)))
+
 (defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
   all drawing.
 
   You are responsible for calling this function once pixi.js is done loading.
-  Returns a <canvas> DOM node which will be rendered to -- you are responsible
-  for attaching this node to the browser DOM."
+  Returns a <canvas> DOM node (as :view) which will be rendered to. You are
+  responsible for attaching this node to the browser DOM. Returns a pair of
+  channels as :render and :input. The render channel is what you should send
+  draw messages to. You can listen on the input channel for user input
+  messages."
   [& {:keys [width height background-color]
       :or {width 500, height 500, background-color 0xFFFFFF}}]
     (reset! stage (new-stage background-color))
     (reset! renderer (.autoDetectRenderer js/PIXI width height))
     (animate-loop)
-    (.-view @renderer))
+    {:view (.-view @renderer) :render (chan channel-buffer-size)})
 
 (defn ^:export main []
-  (.appendChild (.-body js/document)
-    (initialize :width 400 :height 300 :background-color 0x66FF99))
+  (let [{view :view} (initialize :width 400 :height 300
+                                 :background-color 0x66FF99)]
+    (.appendChild (.-body js/document) view))
 
   (def texture (image->texture "bunny.png"))
   (def bunny (new-sprite texture))
-  (set! (.-x (.-anchor bunny)) 0.5)
-  (set! (.-y (.-anchor bunny)) 0.5)
-  (set! (.-x (.-position bunny)) 200)
-  (set! (.-y (.-position bunny)) 150)
+  (def message
+    [[:sprite :bunny
+      [:texture [:image "bunny.png"]]
+      {:anchor [:point 0.5 0.5] :position [:point 200 200]}]])
+  (add-to-stage! bunny)
 
-  (.addChild @stage bunny)
+  (set-property! bunny :anchor (new-point 0.5 0.5))
+  (set-property! bunny :position (new-point 200 200))
 
   (prn "Loaded"))
