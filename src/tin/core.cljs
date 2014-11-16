@@ -8,13 +8,18 @@
 
 (def ^:private stage
   "The global Stage object which coordinates all on-screen drawing. You must
-  call initialize before any other drawing operations to create the Stage."
+   call initialize before any other drawing operations to create the Stage."
   (atom nil))
 
 (def ^:private renderer
   "The global Renderer object which draws to the canvas. You must call
-  initialize to create the Renderer before doing any rendering."
+   initialize to create the Renderer before doing any rendering."
   (atom nil))
+
+(def ^:private display-objects
+  "A map from names to pixi DisplayObjects which have been added to the stage
+   as children."
+  (atom {}))
 
 (def ^:private channel-buffer-size 10)
 
@@ -67,6 +72,8 @@
 (defn- canvas->texture [canvas]
   (.fromCanvas (.-Texture js/PIXI) canvas))
 
+(declare handle-message)
+
 (defn- set-property!
   "Sets a property on a pixi.js object. Maps keywords to known properties, but
   does not ensure the object is of the correct type."
@@ -107,14 +114,27 @@
     :x (set! (.-x object) value)
     :y (set! (.-x object) value)))
 
+(defn- set-properties!
+  "Set all of the properties in the provided properties map to be properties
+   of the provided pixi.js object."
+  [object properties]
+  (dorun (map
+    (fn [entry] (set-property! object (key entry) (handle-message (val entry))))
+    properties)))
+
 (defn- animate-loop []
   (js/requestAnimFrame animate-loop)
   (.render @renderer @stage))
 
 (defn- add-to-stage!
-  "Adds a new child to the global Stage object."
-  [object]
-  (.addChild @stage object))
+  "Adds a new child to the global Stage object, and stores the name of the object
+  in the global name map. Sets the properties from the provided properties map
+  on the object. Returns object."
+  [object name properties]
+  (set-properties! object properties)
+  (.addChild @stage object)
+  (swap! display-objects assoc name object)
+  object)
 
 (defn- handle-point
   "Instantiates and returns a new pixi.js Point from a message"
@@ -129,22 +149,23 @@
       :image (image->texture argument)
       :frame (frame->texture argument)
       :canvas (canvas->texture argument))]
+    (set-properties! texture properties)
     texture))
 
 (defn- handle-sprite
   "Instantiates and returns a new pixi.js Sprite, which is also immediately
-   added as a child of the global Scene."
+   added as a child of the global stage."
   [[:sprite name texture properties]]
-  (let [sprite (new-sprite (handle-texture texture))]))
-
+  (let [sprite (new-sprite (handle-texture texture))]
+    (add-to-stage! sprite name properties)))
 
 (defn- handle-message
   "Parses the provided message and renders the contents to the canvas."
   [message]
   (case (first message)
     :point (handle-point message)
-    :texture (handle-texture message)
-    :sprite (handle-sprite message)))
+    :sprite (handle-sprite message)
+    message))
 
 (defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
@@ -168,15 +189,8 @@
                                  :background-color 0x66FF99)]
     (.appendChild (.-body js/document) view))
 
-  (def texture (image->texture "bunny.png"))
-  (def bunny (new-sprite texture))
-  (def message
+  (def messages
     [[:sprite :bunny
       [:texture [:image "bunny.png"]]
       {:anchor [:point 0.5 0.5] :position [:point 200 200]}]])
-  (add-to-stage! bunny)
-
-  (set-property! bunny :anchor (new-point 0.5 0.5))
-  (set-property! bunny :position (new-point 200 200))
-
-  (prn "Loaded"))
+  (dorun (map handle-message messages)))
