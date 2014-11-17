@@ -167,6 +167,11 @@
     :sprite (handle-sprite message)
     message))
 
+(defn- tween
+  "Returns a new Tween instance with the provided target object."
+  [target]
+  (.get (.-Tween js/createjs) target))
+
 (defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
   all drawing.
@@ -193,4 +198,9 @@
     [[:sprite :bunny
       [:texture [:image "bunny.png"]]
       {:anchor [:point 0.5 0.5] :position [:point 200 200]}]])
-  (dorun (map handle-message messages)))
+  (dorun (map handle-message messages))
+
+  (def bunny (:bunny @display-objects))
+  (def my-tween (tween bunny))
+  (prn my-tween)
+  (prn bunny))

@@ -16,9 +16,6 @@
                 :output-dir "out"
                 :optimizations :whitespace
                 :pretty-print true
-                :externs ["externs/pixi.js"]
-                :closure-warnings {:externs-validation :off
-                                   :non-standard-jsdoc :off}
                 :source-map "out/tin.sourcemap.js"}}
              {:id "compiled"
               :source-paths ["src"]
@@ -27,7 +24,8 @@
                 :output-dir "compiled"
                 :optimizations :advanced
                 :pretty-print false
-                :externs ["externs/pixi.js"]
+                :externs ["externs/tweenjs.min.js" "externs/pixi.min.js"
+                          "externs/howler.min.js"]
                 :closure-warnings {:externs-validation :off
                                    :non-standard-jsdoc :off}
                 :source-map "compiled/tin.sourcemap.js"}}]})

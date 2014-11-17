@@ -4,7 +4,7 @@
   	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <script src="http://www.livejs.com/live.js"></script>
     <script>
-      SCRIPT_COUNT = 2;
+      SCRIPT_COUNT = 3;
       scriptLoaded = function() {
         window.console.log("script loaded: " + SCRIPT_COUNT);
         SCRIPT_COUNT--;
@@ -14,6 +14,7 @@
   </head>
   <body>
     <script async onload="scriptLoaded()" src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/1.6.1/pixi.js"></script>
+    <script async onload="scriptLoaded()" src="http://code.createjs.com/tweenjs-0.5.1.min.js"></script>
     <script async onload="scriptLoaded()" src="out/tin.js"></script>
   </body>
 </html>
