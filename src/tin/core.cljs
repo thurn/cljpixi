@@ -122,14 +122,24 @@
     (fn [entry] (set-property! object (key entry) (handle-message (val entry))))
     properties)))
 
-(defn- animate-loop []
+(def ^:private last-timestamp
+  "The relative timestamp at which the animate loop last ran."
+  (atom nil))
+
+(defn- animate-loop
+  "Animation loop function, intended to be called repeatedly by
+   requestAnimationFrame"
+  [timestamp]
   (js/requestAnimFrame animate-loop)
-  (.render @renderer @stage))
+  (.tick (.-Tween js/createjs)
+    (- timestamp (or @last-timestamp timestamp)) false)
+  (.render @renderer @stage)
+  (reset! last-timestamp timestamp))
 
 (defn- add-to-stage!
-  "Adds a new child to the global Stage object, and stores the name of the object
-  in the global name map. Sets the properties from the provided properties map
-  on the object. Returns object."
+  "Adds a new child to the global Stage object, and stores the name of the
+  object in the global name map. Sets the properties from the provided
+  properties map on the object. Returns object."
   [object name properties]
   (set-properties! object properties)
   (.addChild @stage object)
@@ -172,6 +182,12 @@
   [target]
   (.get (.-Tween js/createjs) target))
 
+(defn- tween-to
+  "Queues a tween to the provided target properties on the provided Tween
+   object for 'duration' milliseconds using easing function 'ease'"
+  [object props duration]
+  (.to object props duration))
+
 (defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
   all drawing.
@@ -186,21 +202,64 @@
       :or {width 500, height 500, background-color 0xFFFFFF}}]
     (reset! stage (new-stage background-color))
     (reset! renderer (.autoDetectRenderer js/PIXI width height))
-    (animate-loop)
+    (js/requestAnimFrame animate-loop)
     {:view (.-view @renderer) :render (chan channel-buffer-size)})
 
 (defn ^:export main []
-  (let [{view :view} (initialize :width 400 :height 300
+  (let [{view :view} (initialize :width 400 :height 400
                                  :background-color 0x66FF99)]
     (.appendChild (.-body js/document) view))
 
-  (def messages
-    [[:sprite :bunny
-      [:texture [:image "bunny.png"]]
-      {:anchor [:point 0.5 0.5] :position [:point 200 200]}]])
+  (defn- bunny-message [x y]
+    [:sprite (str "bunny" x "," y) [:texture [:image "bunny.png"]]
+      {:anchor [:point 0.5 0.5] :position [:point (* 20 x) (* 20 y)]}])
+
+  (def messages (for [x (range 1 20) y (range 1 20)] (bunny-message x y)))
+
   (dorun (map handle-message messages))
 
-  (def bunny (:bunny @display-objects))
-  (def my-tween (tween bunny))
-  (prn my-tween)
-  (prn bunny))
+  (defn bunny-rotate [x y]
+    (let [t (tween (@display-objects (str "bunny" x "," y)))]
+      (set! (.-loop t) true)
+      (tween-to t (js-obj "rotation" (* Math/PI 2)) (+ 1000 (rand-int 1000)))))
+
+  (doseq [x (range 1 20) y (range 1 20)] (bunny-rotate x y))
+
+  ;; (def bunny (@display-objects "bunny1"))
+  ;; (prn "bunny " bunny)
+
+  ;; (def my-tween (tween bunny))
+  ;; (prn "my-tween" my-tween)
+
+  ;; (set! (.-loop my-tween) true)
+  ;; (tween-to my-tween (js-obj "rotation" (* Math/PI 2)) 2000)
+
+  ;; (let [t (tween (:bunny2 @display-objects))]
+  ;;   (set! (.-loop t) true)
+  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 2000))
+  ;; (let [t (tween (:bunny3 @display-objects))]
+  ;;   (set! (.-loop t) true)
+  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1900))
+  ;; (let [t (tween (:bunny4 @display-objects))]
+  ;;   (set! (.-loop t) true)
+  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1800))
+  ;; (let [t (tween (:bunny5 @display-objects))]
+  ;;   (set! (.-loop t) true)
+  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1700))
+  ;; (let [t (tween (:bunny6 @display-objects))]
+  ;;   (set! (.-loop t) true)
+  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1600))
+  ;; (let [t (tween (:bunny7 @display-objects))]
+  ;;   (set! (.-loop t) true)
+  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1500))
+  ;; (let [t (tween (:bunny8 @display-objects))]
+  ;;   (set! (.-loop t) true)
+  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1400))
+  ;; (let [t (tween (:bunny9 @display-objects))]
+  ;;   (set! (.-loop t) true)
+  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1300))
+  ;; (let [t (tween (:bunny10 @display-objects))]
+  ;;   (set! (.-loop t) true)
+  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1200))
+
+  )
