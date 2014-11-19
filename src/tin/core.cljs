@@ -216,7 +216,7 @@
   channels as :render and :input. The render channel is what you should send
   draw messages to. You can listen on the input channel for user input
   messages."
-  [& {:keys [width height background-color]
+  [& {:keys [width height background-color loader]
       :or {width 500, height 500, background-color 0xFFFFFF}}]
     (reset! stage (new-stage background-color))
     (reset! renderer (.autoDetectRenderer js/PIXI width height))
@@ -250,5 +250,4 @@
     [:to options]
     [:wait duration]
     [:play tween]
-  [:timeline options & tweens]
-)
+  [:timeline options & tweens])
