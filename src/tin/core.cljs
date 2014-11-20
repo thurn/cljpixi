@@ -118,9 +118,11 @@
   "Set all of the properties in the provided properties map to be properties
    of the provided pixi.js object."
   [object properties]
-  (dorun (map
-    (fn [entry] (set-property! object (key entry) (handle-message (val entry))))
-    properties)))
+  (dorun
+    (map
+      (fn [entry]
+        (set-property! object (key entry) (handle-message (val entry))))
+      properties)))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -131,8 +133,10 @@
    requestAnimationFrame"
   [timestamp]
   (js/requestAnimFrame animate-loop)
-  (.tick (.-Tween js/createjs)
-    (- timestamp (or @last-timestamp timestamp)) false)
+  (.tick
+    (.-Tween js/createjs)
+    (- timestamp (or @last-timestamp timestamp))
+    false)
   (.render @renderer @stage)
   (reset! last-timestamp timestamp))
 
@@ -166,27 +170,41 @@
   "Instantiates and returns a new pixi.js Sprite, which is also immediately
    added as a child of the global stage."
   [[:sprite name texture properties]]
-  (let [sprite (new-sprite (handle-texture texture))]
+  (let [sprite (new-sprite (handle-message texture))]
     (add-to-stage! sprite name properties)))
+
+(defn- new-tween
+  "Returns a new Tween instance with the provided target object."
+  [target properties]
+  (.get (.-Tween js/createjs) target properties))
+
+(defn- handle-tween-action
+  "Applies a TweenJS action to the provided tween."
+  [tween action]
+  (prn (str "handle-tween-action" tween action))
+  (case (first action)
+    :to
+      (let [[:to {:keys [duration ease] :as options}] action]
+        (.to tween (clj->js options) duration ease))
+    :wait (let [[:wait duration] action] (.wait tween duration))
+    :play (let [[:play message] action] (.play (handle-message message)))))
+
+(defn- handle-tween
+  "Creates a new TweenJS Tween object and starts it with the supplied actions."
+  [[:tween target-name options & actions]]
+  (prn (str "handle-tween" target-name options actions))
+  (let [tween (new-tween (@display-objects target-name) (clj->js options))]
+    (doseq [action actions] (handle-tween-action tween action))))
 
 (defn- handle-message
   "Parses the provided message and renders the contents to the canvas."
   [message]
   (case (first message)
     :point (handle-point message)
+    :texture (handle-texture message)
     :sprite (handle-sprite message)
+    :tween (handle-tween message)
     message))
-
-(defn- tween
-  "Returns a new Tween instance with the provided target object."
-  [target]
-  (.get (.-Tween js/createjs) target))
-
-(defn- tween-to
-  "Queues a tween to the provided target properties on the provided Tween
-   object for 'duration' milliseconds using easing function 'ease'"
-  [object props duration]
-  (.to object props duration))
 
 (defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
@@ -205,61 +223,32 @@
     (js/requestAnimFrame animate-loop)
     {:view (.-view @renderer) :render (chan channel-buffer-size)})
 
+(def example1
+  [[:sprite
+    (str :bunny)
+    [:texture [:image "bunny.png"]]
+    {:anchor [:point 0.5 0.5] :position [:point 300 300]}]
+   [:tween (str :bunny) {:loop true}
+     [:to {:rotation (* Math/PI 2) :duration 1000}]]])
+
 (defn ^:export main []
-  (let [{view :view} (initialize :width 400 :height 400
-                                 :background-color 0x66FF99)]
-    (.appendChild (.-body js/document) view))
+  (let [{view :view}
+        (initialize :width 600 :height 600 :background-color 0x66FF99)]
+    (.appendChild (.-body js/document) view)
+    (dorun (map handle-message example1))))
 
-  (defn- bunny-message [x y]
-    [:sprite (str "bunny" x "," y) [:texture [:image "bunny.png"]]
-      {:anchor [:point 0.5 0.5] :position [:point (* 20 x) (* 20 y)]}])
-
-  (def messages (for [x (range 1 20) y (range 1 20)] (bunny-message x y)))
-
-  (dorun (map handle-message messages))
-
-  (defn bunny-rotate [x y]
-    (let [t (tween (@display-objects (str "bunny" x "," y)))]
-      (set! (.-loop t) true)
-      (tween-to t (js-obj "rotation" (* Math/PI 2)) (+ 1000 (rand-int 1000)))))
-
-  (doseq [x (range 1 20) y (range 1 20)] (bunny-rotate x y))
-
-  ;; (def bunny (@display-objects "bunny1"))
-  ;; (prn "bunny " bunny)
-
-  ;; (def my-tween (tween bunny))
-  ;; (prn "my-tween" my-tween)
-
-  ;; (set! (.-loop my-tween) true)
-  ;; (tween-to my-tween (js-obj "rotation" (* Math/PI 2)) 2000)
-
-  ;; (let [t (tween (:bunny2 @display-objects))]
-  ;;   (set! (.-loop t) true)
-  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 2000))
-  ;; (let [t (tween (:bunny3 @display-objects))]
-  ;;   (set! (.-loop t) true)
-  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1900))
-  ;; (let [t (tween (:bunny4 @display-objects))]
-  ;;   (set! (.-loop t) true)
-  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1800))
-  ;; (let [t (tween (:bunny5 @display-objects))]
-  ;;   (set! (.-loop t) true)
-  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1700))
-  ;; (let [t (tween (:bunny6 @display-objects))]
-  ;;   (set! (.-loop t) true)
-  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1600))
-  ;; (let [t (tween (:bunny7 @display-objects))]
-  ;;   (set! (.-loop t) true)
-  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1500))
-  ;; (let [t (tween (:bunny8 @display-objects))]
-  ;;   (set! (.-loop t) true)
-  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1400))
-  ;; (let [t (tween (:bunny9 @display-objects))]
-  ;;   (set! (.-loop t) true)
-  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1300))
-  ;; (let [t (tween (:bunny10 @display-objects))]
-  ;;   (set! (.-loop t) true)
-  ;;   (tween-to t (js-obj "rotation" (* Math/PI 2)) 1200))
-
-  )
+(comment ;; Message Format
+  [:sprite name texture options]
+  [:point x y]
+  [:texture texture-expression]
+    ;; Valid Texture expressions:
+    [:image "path.png"]
+    [:canvas canvas-object]
+    [:frame frame-id]
+  [:tween target-name options & actions]
+    ;; Valid Actions:
+    [:to options]
+    [:wait duration]
+    [:play tween]
+  [:timeline options & tweens]
+)
