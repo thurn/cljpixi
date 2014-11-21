@@ -63,6 +63,10 @@
   (let [Sprite (.-Sprite js/PIXI)]
     (Sprite. texture)))
 
+(defn- new-asset-loader [assets]
+  (let [AssetLoader (.-AssetLoader js/PIXI)]
+    (AssetLoader. assets)))
+
 (defn- image->texture [image-url]
   (.fromImage (.-Texture js/PIXI) image-url))
 
@@ -206,6 +210,17 @@
     :tween (handle-tween message)
     message))
 
+(defn load-assets
+  "Loads assets with the provided paths by inspecting their file extensions.
+   Returns a channel which will have the message :loaded put! onto it once
+   the asset loading is completed."
+  [[:load & assets]]
+  (let [result-channel (chan)
+        loader (new-asset-loader (to-array assets))]
+    (.addEventListener loader "onComplete" #(put! result-channel :loaded))
+    (.load loader)
+    result-channel))
+
 (defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
   all drawing.
@@ -216,12 +231,20 @@
   channels as :render and :input. The render channel is what you should send
   draw messages to. You can listen on the input channel for user input
   messages."
-  [& {:keys [width height background-color loader]
+  [& {:keys [width height background-color]
       :or {width 500, height 500, background-color 0xFFFFFF}}]
     (reset! stage (new-stage background-color))
     (reset! renderer (.autoDetectRenderer js/PIXI width height))
     (js/requestAnimFrame animate-loop)
-    {:view (.-view @renderer) :render (chan channel-buffer-size)})
+    (let [render-channel (chan channel-buffer-size)
+          input-channel (chan channel-buffer-size)
+          view (.-view @renderer)]
+      (go (loop [[type & _ :as message] (<! render-channel)]
+        (if (= type :load)
+          (<! (load-assets message)) ; Block until assets are loaded.
+          (handle-message message))
+        (recur (<! render-channel))))
+      {:view view :render render-channel :input input-channel}))
 
 (def example1
   [[:sprite
@@ -232,10 +255,10 @@
      [:to {:rotation (* Math/PI 2) :duration 1000}]]])
 
 (defn ^:export main []
-  (let [{view :view}
+  (let [{view :view render-channel :render input-channel :input}
         (initialize :width 600 :height 600 :background-color 0x66FF99)]
     (.appendChild (.-body js/document) view)
-    (dorun (map handle-message example1))))
+    (dorun (map #(put! render-channel %) example1))))
 
 (comment ;; Message Format
   [:sprite name texture options]
@@ -250,4 +273,7 @@
     [:to options]
     [:wait duration]
     [:play tween]
-  [:timeline options & tweens])
+  [:timeline options & tweens]
+  [:load & filenames] ;; Blocks rendering until loaded.
+  [:clear] ;; Remove everything in scene.
+)
