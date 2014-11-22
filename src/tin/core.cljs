@@ -67,6 +67,10 @@
   (let [AssetLoader (.-AssetLoader js/PIXI)]
     (AssetLoader. assets)))
 
+(defn- new-display-object-container []
+  (let [DisplayObjectContainer (.-DisplayObjectContainer js/PIXI)]
+    (DisplayObjectContainer. )))
+
 (defn- image->texture [image-url]
   (.fromImage (.-Texture js/PIXI) image-url))
 
@@ -151,7 +155,7 @@
   [object name properties]
   (set-properties! object properties)
   (.addChild @stage object)
-  (swap! display-objects assoc name object)
+  (when name (swap! display-objects assoc name object))
   object)
 
 (defn- handle-point
@@ -177,6 +181,14 @@
   (let [sprite (new-sprite (handle-message texture))]
     (add-to-stage! sprite name properties)))
 
+(defn- handle-container
+  "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
+   also be added as a child of the global stage."
+  [[:container name properties & children]]
+  (let [container (new-display-object-container)]
+    (dorun (map #(.addChild container (handle-message %)) children))
+    (add-to-stage! container name properties)))
+
 (defn- new-tween
   "Returns a new Tween instance with the provided target object."
   [target properties]
@@ -185,7 +197,6 @@
 (defn- handle-tween-action
   "Applies a TweenJS action to the provided tween."
   [tween action]
-  (prn (str "handle-tween-action" tween action))
   (case (first action)
     :to
       (let [[:to {:keys [duration ease] :as options}] action]
@@ -196,7 +207,6 @@
 (defn- handle-tween
   "Creates a new TweenJS Tween object and starts it with the supplied actions."
   [[:tween target-name options & actions]]
-  (prn (str "handle-tween" target-name options actions))
   (let [tween (new-tween (@display-objects target-name) (clj->js options))]
     (doseq [action actions] (handle-tween-action tween action))))
 
@@ -207,10 +217,11 @@
     :point (handle-point message)
     :texture (handle-texture message)
     :sprite (handle-sprite message)
+    :container (handle-container message)
     :tween (handle-tween message)
     message))
 
-(defn load-assets
+(defn- load-assets
   "Loads assets with the provided paths by inspecting their file extensions.
    Returns a channel which will have the message :loaded put! onto it once
    the asset loading is completed."
@@ -246,21 +257,43 @@
         (recur (<! render-channel))))
       {:view view :render render-channel :input input-channel}))
 
-(def example1
-  [[:sprite
-    (str :bunny)
-    [:texture [:image "bunny.png"]]
-    {:anchor [:point 0.5 0.5] :position [:point 300 300]}]
-   [:tween (str :bunny) {:loop true}
-     [:to {:rotation (* Math/PI 2) :duration 1000}]]])
+(defn example1 [render-channel input-channel]
+  (let [messages
+    [[:load "assets/bunny.png"]
+     [:sprite :bunny
+       [:texture [:frame "assets/bunny.png"]]
+       {:anchor [:point 0.5 0.5] :position [:point 300 300]}]
+     [:tween :bunny {:loop true}
+       [:to {:rotation (* Math/PI 2) :duration 1000}]]]]
+    (dorun (map #(put! render-channel %) messages))))
+
+(defn example2-add-sprites
+  [container]
+  (let [frames ["eggHead.png", "flowerTop.png", "helmlok.png", "skully.png"]
+        make-sprite (fn []
+          [:sprite nil
+            [:texture [:frame (rand-nth frames)]]
+            {:anchor [:point 0.5 0.5]
+             :position [:point (+ -400 (rand-int 800))
+                               (+ -300 (rand-int 600))]}])]
+    (into container (repeatedly 100 make-sprite))))
+
+(defn example2 [render-channel input-channel]
+  (let [messages
+    [[:load "assets/SpriteSheet.json"]
+     (example2-add-sprites
+       [:container :aliens
+         {:position [:point 400 300]}])]]
+    (dorun (map #(put! render-channel %) messages))))
 
 (defn ^:export main []
   (let [{view :view render-channel :render input-channel :input}
-        (initialize :width 600 :height 600 :background-color 0x66FF99)]
+        (initialize :width 800 :height 600 :background-color 0x66FF99)]
     (.appendChild (.-body js/document) view)
-    (dorun (map #(put! render-channel %) example1))))
+    (example2 render-channel input-channel)))
 
 (comment ;; Message Format
+  [:container name options & children]
   [:sprite name texture options]
   [:point x y]
   [:texture texture-expression]
