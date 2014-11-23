@@ -1,7 +1,9 @@
 (defproject tin "0.0.1-SNAPSHOT"
   :description "A simple clojurescript game engine"
   :dependencies [[org.clojure/clojure "1.6.0"]
-                 [org.clojure/clojurescript "0.0-2311" :exclusions [org.apache.ant/ant]]
+                 [org.clojure/clojurescript "0.0-2311"
+                  :exclusions [org.apache.ant/ant]]
+                 [org.clojure/core.match "0.2.1"]
                  [org.clojure/core.async "0.1.338.0-5c5012-alpha"]]
   :license {:name "Creative Commons Zero"
             :url "https://creativecommons.org/publicdomain/zero/1.0/legalcode"}

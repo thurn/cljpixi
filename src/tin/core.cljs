@@ -1,8 +1,10 @@
 (ns tin.core
   (:require
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
-                            alts! timeout]])
-  (:require-macros [cljs.core.async.macros :refer [go alt!]]))
+                            alts! timeout]]
+   [cljs.core.match])
+  (:require-macros [cljs.core.async.macros :refer [go alt!]]
+                   [cljs.core.match.macros :refer [match]]))
 
 (enable-console-print!)
 
@@ -17,8 +19,8 @@
   (atom nil))
 
 (def ^:private display-objects
-  "A map from names to pixi DisplayObjects which have been added to the stage
-   as children."
+  "A map from keys to seqs of pixi DisplayObjects which have been added to
+   the stage as children."
   (atom {}))
 
 (def ^:private channel-buffer-size 10)
@@ -127,10 +129,10 @@
    of the provided pixi.js object."
   [object properties]
   (dorun
-    (map
-      (fn [entry]
-        (set-property! object (key entry) (handle-message (val entry))))
-      properties)))
+   (map
+    (fn [entry]
+      (set-property! object (key entry) (handle-message (val entry))))
+    properties)))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -141,22 +143,22 @@
    requestAnimationFrame"
   [timestamp]
   (js/requestAnimFrame animate-loop)
-  (.tick
-    (.-Tween js/createjs)
-    (- timestamp (or @last-timestamp timestamp))
-    false)
+  (.tick (.-Tween js/createjs)
+         (- timestamp (or @last-timestamp timestamp))
+         false)
   (.render @renderer @stage)
   (reset! last-timestamp timestamp))
 
 (defn- add-to-stage!
-  "Adds a new child to the global Stage object, and stores the name of the
-  object in the global name map. Sets the properties from the provided
-  properties map on the object. Returns object."
-  [object name properties]
-  (set-properties! object properties)
-  (.addChild @stage object)
-  (when name (swap! display-objects assoc name object))
-  object)
+  "Adds a new child to the global Stage object, and stores the key for
+  the object in the global display-objects map. Sets the properties
+  from the provided properties map on the object. Returns object."
+  [object key properties]
+  (letfn [(add-object [objects key value] (update-in objects [key] conj value))]
+    (set-properties! object properties)
+    (.addChild @stage object)
+    (when name (swap! display-objects add-object key object))
+    object))
 
 (defn- handle-point
   "Instantiates and returns a new pixi.js Point from a message"
@@ -167,10 +169,10 @@
   "Instantiates and returns a new pixi.js Texture from a message"
   [[:texture [type argument] properties]]
   (let [texture
-    (case type
-      :image (image->texture argument)
-      :frame (frame->texture argument)
-      :canvas (canvas->texture argument))]
+        (case type
+          :image (image->texture argument)
+          :frame (frame->texture argument)
+          :canvas (canvas->texture argument))]
     (set-properties! texture properties)
     texture))
 
@@ -194,21 +196,28 @@
   [target properties]
   (.get (.-Tween js/createjs) target properties))
 
+(defn- handle-tween-to-action
+  "Handles the :to tween action."
+  [tween {:keys [duration ease] :as options}]
+  (let [has-point? (fn [[key value]]
+                     (and (vector? value) (= :point (first value))))
+       point-options (filter has-point? options)])
+  (.to tween (clj->js options) duration ease))
+
 (defn- handle-tween-action
   "Applies a TweenJS action to the provided tween."
   [tween action]
   (case (first action)
-    :to
-      (let [[:to {:keys [duration ease] :as options}] action]
-        (.to tween (clj->js options) duration ease))
+    :to (handle-tween-to-action tween action)
     :wait (let [[:wait duration] action] (.wait tween duration))
     :play (let [[:play message] action] (.play (handle-message message)))))
 
 (defn- handle-tween
-  "Creates a new TweenJS Tween object and starts it with the supplied actions."
-  [[:tween target-name options & actions]]
-  (let [tween (new-tween (@display-objects target-name) (clj->js options))]
-    (doseq [action actions] (handle-tween-action tween action))))
+  "Creates a new TweenJS Tween object for each object with the provided key and
+   starts it with the supplied actions."
+  [[:tween key options & actions]]
+  (let [tweens (map #(new-tween % (clj->js options)) (@display-objects key ()))]
+    (doseq [tween tweens action actions] (handle-tween-action tween action))))
 
 (defn- handle-message
   "Parses the provided message and renders the contents to the canvas."
@@ -244,64 +253,69 @@
   messages."
   [& {:keys [width height background-color]
       :or {width 500, height 500, background-color 0xFFFFFF}}]
-    (reset! stage (new-stage background-color))
-    (reset! renderer (.autoDetectRenderer js/PIXI width height))
-    (js/requestAnimFrame animate-loop)
-    (let [render-channel (chan channel-buffer-size)
-          input-channel (chan channel-buffer-size)
-          view (.-view @renderer)]
-      (go (loop [[type & _ :as message] (<! render-channel)]
-        (if (= type :load)
-          (<! (load-assets message)) ; Block until assets are loaded.
-          (handle-message message))
-        (recur (<! render-channel))))
-      {:view view :render render-channel :input input-channel}))
+  (reset! stage (new-stage background-color))
+  (reset! renderer (.autoDetectRenderer js/PIXI width height))
+  (js/requestAnimFrame animate-loop)
+  (let [render-channel (chan channel-buffer-size)
+        input-channel (chan channel-buffer-size)
+        view (.-view @renderer)]
+    (go (loop [[type & _ :as message] (<! render-channel)]
+          (if (= type :load)
+            (<! (load-assets message))  ; Block until assets are loaded.
+            (handle-message message))
+          (recur (<! render-channel))))
+    {:view view :render render-channel :input input-channel}))
 
 (defn example1 [render-channel input-channel]
   (let [messages
-    [[:load "assets/bunny.png"]
+    [[:load "resources/img/bunny.png"]
      [:sprite :bunny
-       [:texture [:frame "assets/bunny.png"]]
-       {:anchor [:point 0.5 0.5] :position [:point 300 300]}]
+       [:texture [:frame "resources/img/bunny.png"]]
+       {:anchor [:point 0.5 0.5] :position [:point 400 300]}]
+     ;[:tween :bunny {:loop true}
+       ;[:to {:rotation (* Math/PI 2) :duration 1000}]]]]
      [:tween :bunny {:loop true}
-       [:to {:rotation (* Math/PI 2) :duration 1000}]]]]
+       [:to {:scale [{:x 2.0 :y 2.0}] :duration 1000}]]]]
     (dorun (map #(put! render-channel %) messages))))
 
-(defn example2-add-sprites
-  [container]
+(defn example2-sprites
+  []
   (let [frames ["eggHead.png", "flowerTop.png", "helmlok.png", "skully.png"]
+        container [:container :aliens {:position [:point 400 300]}]
         make-sprite (fn []
-          [:sprite nil
-            [:texture [:frame (rand-nth frames)]]
-            {:anchor [:point 0.5 0.5]
-             :position [:point (+ -400 (rand-int 800))
-                               (+ -300 (rand-int 600))]}])]
+                      [:sprite :alien
+                       [:texture [:frame (rand-nth frames)]]
+                       {:anchor [:point 0.5 0.5]
+                        :position [:point (+ -400 (rand-int 800))
+                                   (+ -300 (rand-int 600))]}])]
     (into container (repeatedly 100 make-sprite))))
 
 (defn example2 [render-channel input-channel]
   (let [messages
-    [[:load "assets/SpriteSheet.json"]
-     (example2-add-sprites
-       [:container :aliens
-         {:position [:point 400 300]}])]]
+        [[:load "resources/img/SpriteSheet.json"]
+         (example2-sprites)
+         [:tween :alien {:loop true}
+          [:to {:rotation (* 2 Math/PI) :duration 1000}]]
+         [:tween :aliens {:loop true}
+          [:to {:scale [:point 0.1 0.1] :duration 1000}]]]]
     (dorun (map #(put! render-channel %) messages))))
 
 (defn ^:export main []
   (let [{view :view render-channel :render input-channel :input}
         (initialize :width 800 :height 600 :background-color 0x66FF99)]
     (.appendChild (.-body js/document) view)
-    (example2 render-channel input-channel)))
+    (example1 render-channel input-channel)))
 
 (comment ;; Message Format
-  [:container name options & children]
-  [:sprite name texture options]
+  [:container key options & children]
+  [:sprite key texture options]
   [:point x y]
   [:texture texture-expression]
     ;; Valid Texture expressions:
     [:image "path.png"]
     [:canvas canvas-object]
     [:frame frame-id]
-  [:tween target-name options & actions]
+  [:tween key options & actions]
     ;; Valid Actions:
     [:to options]
     [:wait duration]
