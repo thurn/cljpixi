@@ -2,7 +2,8 @@
   (:require
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
                             alts! timeout]]
-   [cljs.core.match])
+   [cljs.core.match]
+   [tin.ease])
   (:require-macros [cljs.core.async.macros :refer [go alt!]]
                    [cljs.core.match.macros :refer [match]]))
 
@@ -124,6 +125,47 @@
     :x (set! (.-x object) value)
     :y (set! (.-x object) value)))
 
+(defn- get-property
+  "Gets a property from a pixi.js object. Maps keywords to known properties, but
+  does not ensure the object is of the correct type."
+  [object key]
+  (case key
+    :alpha (.-alpha object)
+    :anchor (.-anchor object)
+    :animation-speed (.-animationSpeed object)
+    :blend-mode (.-blendMode object)
+    :button-mode (.-buttonMode object)
+    :canvas (.-canvas object)
+    :context (.-context object)
+    :default-cursor (.-defaultCursor object)
+    :filter-area (.-filterArea object)
+    :filters (.-filters object)
+    :frame (.-frame object)
+    :height (.-height object)
+    :hit-area (.-hitArea object)
+    :interactive? (.-interactive object)
+    :mask (.-mask object)
+    :pivot (.-pivot object)
+    :points (.-points object)
+    :position (.-position object)
+    :radius (.-radius object)
+    :rotation (.-rotation object)
+    :scale (.-scale object)
+    :scale-mode (.-scaleMode object)
+    :size (.-size object)
+    :source (.-source object)
+    :style (.-style object)
+    :text (.-text object)
+    :texture (.-texture object)
+    :textures (.-textures object)
+    :tile-position (.-tilePosition object)
+    :tile-scale (.-tileScale object)
+    :tile-scale-offset (.-tileScaleOffset object)
+    :visible? (.-visible object)
+    :width (.-width object)
+    :x (.-x object)
+    :y (.-x object)))
+
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
    of the provided pixi.js object."
@@ -131,7 +173,7 @@
   (dorun
    (map
     (fn [entry]
-      (set-property! object (key entry) (handle-message (val entry))))
+      (aset object (name (key entry)) (handle-message (val entry))))
     properties)))
 
 (def ^:private last-timestamp
@@ -145,7 +187,7 @@
   (js/requestAnimFrame animate-loop)
   (.tick (.-Tween js/createjs)
          (- timestamp (or @last-timestamp timestamp))
-         false)
+         false) ; Is globally paused?
   (.render @renderer @stage)
   (reset! last-timestamp timestamp))
 
@@ -194,30 +236,44 @@
 (defn- new-tween
   "Returns a new Tween instance with the provided target object."
   [target properties]
-  (.get (.-Tween js/createjs) target properties))
+  (.get (.-Tween js/createjs) target (clj->js properties)))
+
+(defn point-binary-function
+  "Takes a binary function and returns a function which will apply it old-point,
+  a pixi.js point object and new-point, an {:x :y} formatted map, and return an
+  {:x :y} map of the result."
+  [binary-function]
+  (fn [old-point new-point]
+    {:x (binary-function (.-x old-point) (:x new-point))
+     :y (binary-function (.-y old-point) (:y new-point))}))
 
 (defn- handle-tween-to-action
-  "Handles the :to tween action."
-  [tween {:keys [duration ease] :as options}]
-  (let [has-point? (fn [[key value]]
-                     (and (vector? value) (= :point (first value))))
-       point-options (filter has-point? options)])
-  (.to tween (clj->js options) duration ease))
+  "Handles the :to tween action"
+  [object tween-options [:to property value
+                         & {:keys [duration ease function]
+                            :or {duration 1000
+                                 ease (tin.ease/linear)
+                                 function #(identity %2)}}]]
+  (let [current-value (js->clj (aget object (name property)))
+        target (function current-value value)]
+    (if (map? value)
+      (.to (new-tween current-value tween-options)
+           (clj->js target) duration ease)
+      (.to (new-tween object tween-options)
+           (clj->js {property target}) duration ease))))
 
 (defn- handle-tween-action
   "Applies a TweenJS action to the provided tween."
-  [tween action]
+  [object tween-options action]
   (case (first action)
-    :to (handle-tween-to-action tween action)
-    :wait (let [[:wait duration] action] (.wait tween duration))
-    :play (let [[:play message] action] (.play (handle-message message)))))
+    :to (handle-tween-to-action object tween-options action)))
 
 (defn- handle-tween
   "Creates a new TweenJS Tween object for each object with the provided key and
    starts it with the supplied actions."
-  [[:tween key options & actions]]
-  (let [tweens (map #(new-tween % (clj->js options)) (@display-objects key ()))]
-    (doseq [tween tweens action actions] (handle-tween-action tween action))))
+  [[:tween key tween-options & actions]]
+  (doseq [object (@display-objects key ()) action actions]
+    (handle-tween-action object tween-options action)))
 
 (defn- handle-message
   "Parses the provided message and renders the contents to the canvas."
@@ -268,14 +324,18 @@
 
 (defn example1 [render-channel input-channel]
   (let [messages
-    [[:load "resources/img/bunny.png"]
-     [:sprite :bunny
-       [:texture [:frame "resources/img/bunny.png"]]
-       {:anchor [:point 0.5 0.5] :position [:point 400 300]}]
-     ;[:tween :bunny {:loop true}
-       ;[:to {:rotation (* Math/PI 2) :duration 1000}]]]]
-     [:tween :bunny {:loop true}
-       [:to {:scale [{:x 2.0 :y 2.0}] :duration 1000}]]]]
+        [[:load "resources/img/bunny.png"]
+         [:sprite :spinning-bunny
+          [:texture [:frame "resources/img/bunny.png"]]
+          {:anchor [:point 0.5 0.5] :position [:point 400 300]}]
+         [:sprite :moving-bunny
+          [:texture [:frame "resources/img/bunny.png"]]
+          {:anchor [:point 0.5 0.5] :position [:point 50 50]}]
+         [:tween :spinning-bunny {:loop true}
+          [:to :rotation (* 2 Math/PI) {:duration 1000}]]
+         [:tween :moving-bunny {:loop true}
+          [:to :position {:x 500 :y 500} :duration 5000
+               :function (point-binary-function +)]]]]
     (dorun (map #(put! render-channel %) messages))))
 
 (defn example2-sprites
@@ -295,16 +355,19 @@
         [[:load "resources/img/SpriteSheet.json"]
          (example2-sprites)
          [:tween :alien {:loop true}
-          [:to {:rotation (* 2 Math/PI) :duration 1000}]]
+          [:to :rotation (* 2 Math/PI) :duration 1000]]
          [:tween :aliens {:loop true}
-          [:to {:scale [:point 0.1 0.1] :duration 1000}]]]]
+          [:to :scale {:x 0.1 :y 0.1} :duration 3000
+             :ease #(Math/sin (* Math/PI %))]]
+         [:tween :aliens {:loop true}
+           [:to :rotation (* Math/PI 2) :duration 20000]]]]
     (dorun (map #(put! render-channel %) messages))))
 
 (defn ^:export main []
   (let [{view :view render-channel :render input-channel :input}
         (initialize :width 800 :height 600 :background-color 0x66FF99)]
     (.appendChild (.-body js/document) view)
-    (example1 render-channel input-channel)))
+    (example2 render-channel input-channel)))
 
 (comment ;; Message Format
   [:container key options & children]
@@ -317,9 +380,13 @@
     [:frame frame-id]
   [:tween key options & actions]
     ;; Valid Actions:
-    [:to options]
-    [:wait duration]
-    [:play tween]
+    [:to property value {:function f :duration d :ease e}]
+    ;; Value can be a number or {:x :y} map for PIXI.Point properties
+    ;; Function takes 2 args - previous and value, and should return the
+    ;; new value to tween to. Default is to discard previous, but you can e.g.
+    ;; pass + to make it behave like a += operation.
+    ;; Note that the function is not re-evalutated with the :loop option,
+    ;; looping tweens are always between two fixed values.
   [:timeline options & tweens]
   [:load & filenames] ;; Blocks rendering until loaded.
   [:clear] ;; Remove everything in scene.

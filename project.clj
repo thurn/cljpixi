@@ -17,8 +17,7 @@
                 :output-to "out/tin.js"
                 :output-dir "out"
                 :optimizations :whitespace
-                :pretty-print true
-                :source-map "out/tin.sourcemap.js"}}
+                :pretty-print true}}
              {:id "compiled"
               :source-paths ["src"]
               :compiler {
