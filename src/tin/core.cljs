@@ -1,9 +1,9 @@
 (ns tin.core
   (:require
+   [tin.ease]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
                             alts! timeout]]
-   [cljs.core.match]
-   [tin.ease])
+   [cljs.core.match])
   (:require-macros [cljs.core.async.macros :refer [go alt!]]
                    [cljs.core.match.macros :refer [match]]))
 
@@ -24,7 +24,7 @@
    the stage as children."
   (atom {}))
 
-(def ^:private channel-buffer-size 10)
+(def ^:private channel-buffer-size 65536)
 
 (defn- new-point [x y]
   (let [Point (.-Point js/PIXI)]
@@ -245,9 +245,9 @@
   (.get (.-Tween js/createjs) target (clj->js properties)))
 
 (defn point-binary-function
-  "Takes a binary function and returns a function which will apply it old-point,
-  a pixi.js point object and new-point, an {:x :y} formatted map, and return an
-  {:x :y} map of the result."
+  "Takes a binary function and returns a function which will apply it to
+  old-point, a pixi.js point object and new-point, an {:x :y} formatted map, and
+  return an {:x :y} map of the result."
   [binary-function]
   (fn [old-point new-point]
     {:x (binary-function (.-x old-point) (:x new-point))
@@ -271,7 +271,6 @@
 (defn- handle-animation-action
   "Applies a TweenJS action to the provided tween."
   [object tween-options action]
-  (println "handle-animation-action " action)
   (case (first action)
     :tween
       (handle-tween-action object tween-options action)
@@ -286,7 +285,6 @@
   "Creates a new TweenJS Tween object for each object with the provided key and
    starts it with the supplied actions."
   [[:animation key tween-options & actions]]
-  (println "handle animation " key)
   (doseq [object (@display-objects key ()) action actions]
     (handle-animation-action object tween-options action)))
 
@@ -302,7 +300,6 @@
   [message]
   (if (sequential? message)
     (do
-      (println "handle-message " (first message))
       (case (first message)
         :messages (dorun (map handle-message (rest message)))
         :point (handle-point message)
@@ -404,7 +401,7 @@
         (fn [i] [:texture [:frame (str "Explosion_Sequence_A " i ".png")]])
         make-movie-clip
         (fn [i]
-          (let [scale (rand-between 0.75 1.25)]
+          (let [scale (rand-between 0.75 1.5)]
             [:movie-clip (str "explosion" i) (map make-texture (range 1 27))
              {:position [:point (rand-int 800) (rand-int 600)]
               :rotation (rand-int Math/PI) :anchor [:point 0.5 0.5]
@@ -417,12 +414,6 @@
          (into [:messages] (map make-movie-clip (range 50)))
          (into [:messages] (map make-animation (range 50)))]]
     (dorun (map #(put! render-channel %) messages))))
-
-(defn ^:export main []
-  (let [{view :view render-channel :render input-channel :input}
-        (initialize :width 800 :height 600 :background-color 0x0)]
-    (.appendChild (.-body js/document) view)
-    (example3 render-channel input-channel)))
 
 ;; Todo: support from-frames helper function constructors for sprites & clips
 
