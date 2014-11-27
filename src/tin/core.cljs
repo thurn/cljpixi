@@ -304,6 +304,7 @@
     (do
       (println "handle-message " (first message))
       (case (first message)
+        :messages (dorun (map handle-message (rest message)))
         :point (handle-point message)
         :texture (handle-texture message)
         :sprite (handle-sprite message)
@@ -348,6 +349,11 @@
           (recur (<! render-channel))))
     {:view view :render render-channel :input input-channel}))
 
+(defn- rand-between
+  "Returns a random number between low (inclusive) and high (exclusive)."
+  [low high]
+  (+ low (rand-int (- high low))))
+
 (defn example1 [render-channel input-channel]
   (let [messages
         [[:load "resources/example1/bunny.png"]
@@ -372,8 +378,8 @@
                       [:sprite :alien
                        [:texture [:frame (rand-nth frames)]]
                        {:anchor [:point 0.5 0.5]
-                        :position [:point (+ -400 (rand-int 800))
-                                   (+ -300 (rand-int 600))]}])]
+                        :position [:point (rand-between -400 400)
+                                   (rand-between -300 300)]}])]
     (into container (repeatedly 100 make-sprite))))
 
 (defn example2 [render-channel input-channel]
@@ -389,20 +395,32 @@
           [:tween :rotation (* Math/PI 2) :duration 20000]]]]
     (dorun (map #(put! render-channel %) messages))))
 
-(defn make-example3-texture [i]
-  [:texture [:frame (str "Explosion_Sequence_A " i ".png")]])
+;; Todo: Nested defns?
 
+;; Todo: Don't require having *each* movie clip have a separate vector of
+;; textures, let users have a collection of textures under a key
 (defn example3 [render-channel input-channel]
-  (let [messages
+  (let [make-texture
+        (fn [i] [:texture [:frame (str "Explosion_Sequence_A " i ".png")]])
+        make-movie-clip
+        (fn [i]
+          (let [scale (rand-between 0.75 1.25)]
+            [:movie-clip (str "explosion" i) (map make-texture (range 1 27))
+             {:position [:point (rand-int 800) (rand-int 600)]
+              :rotation (rand-int Math/PI) :anchor [:point 0.5 0.5]
+              :scale [:point scale scale] :loop true}]))
+        make-animation
+        (fn [i]
+          [:animation (str "explosion" i) {} [:play-clip (rand-between 1 27)]])
+        messages
         [[:load "resources/example3/SpriteSheet.json"]
-         [:movie-clip :explosion (map make-example3-texture (range 1 27))
-           {:position [:point 400 300] :anchor [:point 0.5 0.5] :loop true}]
-         [:animation :explosion {} [:play-clip]]]]
+         (into [:messages] (map make-movie-clip (range 50)))
+         (into [:messages] (map make-animation (range 50)))]]
     (dorun (map #(put! render-channel %) messages))))
 
 (defn ^:export main []
   (let [{view :view render-channel :render input-channel :input}
-        (initialize :width 800 :height 600 :background-color 0x66FF99)]
+        (initialize :width 800 :height 600 :background-color 0x0)]
     (.appendChild (.-body js/document) view)
     (example3 render-channel input-channel)))
 
@@ -415,9 +433,11 @@
 
 ;; Todo: Get rid of [:point] and just do {:x :y}?
 
-;; Todo: Make texture things just arguments (or get rid of textures entirely)
+;; Todo: Make texture things arguments instead of [:texture]
+;; (or get rid of textures entirely)
 
 (comment ;; Message Format
+  [:messages & messages]
   [:container key options & children]
   [:sprite key texture options]
   [:movie-clip key [textures] options]
