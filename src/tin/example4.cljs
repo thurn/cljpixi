@@ -2,8 +2,7 @@
   (:require
    [tin.core :refer [point-binary-function]]
    [tin.examples.example-utils :refer [rand-between]]
-   [cljs.core.async :refer [>! put!]])
-  (:require-macros [cljs.core.async.macros :refer [go]]))
+   [cljs.core.async :refer [put!]]))
 
 (def star-count 5000)
 

@@ -1,8 +1,9 @@
 (ns tin.core
   (:require
    [tin.ease]
+   [clojure.set :refer [intersection]]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
-                            alts! timeout]]
+                            alts! timeout pub]]
    [cljs.core.match])
   (:require-macros [cljs.core.async.macros :refer [go alt!]]
                    [cljs.core.match.macros :refer [match]]))
@@ -25,6 +26,17 @@
   (atom {}))
 
 (def ^:private channel-buffer-size 65536)
+
+(def ^:private event-channel
+  "Channel to put user input events onto."
+  (chan channel-buffer-size))
+
+(def events
+  "A publication for user input events. You can specify an input key for a
+   specific type of user event on a display object, and that key will be used as
+   the topic of a message which will be published here when that user input
+   occurs."
+  (pub event-channel :topic))
 
 (defn- new-point [x y]
   (let [Point (.-Point js/PIXI)]
@@ -58,9 +70,9 @@
   (let [TilingSprite (.-TilingSprite js/PIXI)]
     (TilingSprite. texture width height)))
 
-(defn- new-stage [background-color]
+(defn- new-stage [background-color interactive]
   (let [Stage (.-Stage js/PIXI)]
-    (Stage. background-color)))
+    (Stage. background-color interactive)))
 
 (defn- new-sprite [texture]
   (let [Sprite (.-Sprite js/PIXI)]
@@ -94,7 +106,7 @@
     :anchor (set! (.-anchor object) value)
     :animation-speed (set! (.-animationSpeed object) value)
     :blend-mode (set! (.-blendMode object) value)
-    :button-mode (set! (.-buttonMode object) value)
+    :button-mode? (set! (.-buttonMode object) value)
     :canvas (set! (.-canvas object) value)
     :context (set! (.-context object) value)
     :default-cursor (set! (.-defaultCursor object) value)
@@ -134,7 +146,7 @@
     :anchor (.-anchor object)
     :animation-speed (.-animationSpeed object)
     :blend-mode (.-blendMode object)
-    :button-mode (.-buttonMode object)
+    :button-mode? (.-buttonMode object)
     :canvas (.-canvas object)
     :context (.-context object)
     :default-cursor (.-defaultCursor object)
@@ -166,6 +178,24 @@
     :x (.-x object)
     :y (.-x object)))
 
+(def ^:private input-events
+  #{:click :mouse-down :mouse-up :mouse-up-outside :mouse-over :mouse-out
+    :tap :touch-start :touch-end :touch-end-outside})
+
+(defn set-input-function!
+  [object event fn]
+  (case event
+    :click (set! (.-click object) fn)
+    :mouse-down (set! (.-mousedown object) fn)
+    :mouse-up (set! (.-mouseup object) fn)
+    :mouse-up-outside (set! (.-mouseupoutside object) fn)
+    :mouse-over (set! (.-mouseover object) fn)
+    :mouse-out (set! (.-mouseout object) fn)
+    :tap (set! (.-tap object) fn)
+    :touch-start (set! (.-touchstart object) fn)
+    :touch-end (set! (.-touchend object) fn)
+    :touch-end-outside (set! (.-touchendoutside object) fn)))
+
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
    of the provided pixi.js object."
@@ -173,8 +203,8 @@
   (dorun
    (map
     (fn [entry]
-      (aset object (name (key entry)) (handle-message (val entry))))
-    properties)))
+      (set-property! object (key entry) (handle-message (val entry))))
+    (filter #(not (contains? input-events (key %))) properties))))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -202,6 +232,23 @@
     (when name (swap! display-objects add-object key object))
     object))
 
+(defn- add-input-callbacks!
+  "Add user input callbacks to the provided DisplayObject where they are
+   requested."
+  [key object properties]
+  (when-let [events (not-empty (intersection input-events
+                                             (into #{} (keys properties))))]
+    (set! (.-interactive object) true)
+    (doseq [event events]
+      (set-input-function!
+       object event
+       (fn [data]
+         (put! event-channel {:topic (properties event)
+                              :key key
+                              :coordinates (.-global data)
+                              :target (.-target data)
+                              :event (.-originalEvent data)}))))))
+
 (defn- handle-point
   "Instantiates and returns a new pixi.js Point from a message"
   [[:point x y]]
@@ -223,13 +270,22 @@
    added as a child of the global stage."
   [[:sprite key texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
+    (add-input-callbacks! key sprite properties)
     (add-to-stage! sprite key properties)))
 
 (defn- handle-movie-clip
   "Instantiates a pixi.js MovieClip and adds it to the global stage."
   [[:movie-clip key textures properties]]
   (let [clip (new-movie-clip (clj->js (map handle-message textures)))]
+    (add-input-callbacks! key clip properties)
     (add-to-stage! clip key properties)))
+
+(defn- handle-update
+  "Updates the properties of an existing DisplayObject. Cannot be used to set
+   user input functions."
+  [[:update key properties]]
+  (doseq [object (@display-objects key)]
+    (set-properties! object properties)))
 
 (defn- handle-container
   "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
@@ -237,6 +293,7 @@
   [[:container name properties & children]]
   (let [container (new-display-object-container)]
     (dorun (map #(.addChild container (handle-message %)) children))
+    (add-input-callbacks! name container properties)
     (add-to-stage! container name properties)))
 
 (defn- new-tween
@@ -260,7 +317,7 @@
                             :or {duration 1000
                                  ease (tin.ease/linear)
                                  function #(identity %2)}}]]
-  (let [current-value (js->clj (aget object (name property)))
+  (let [current-value (js->clj (get-property object property))
         target (function current-value value)]
     (if (map? value)
       (.to (new-tween current-value tween-options)
@@ -306,6 +363,7 @@
         :texture (handle-texture message)
         :sprite (handle-sprite message)
         :movie-clip (handle-movie-clip message)
+        :update (handle-update message)
         :container (handle-container message)
         :animation (handle-animation message)))
     message))
@@ -333,7 +391,7 @@
   messages."
   [& {:keys [width height background-color]
       :or {width 500, height 500, background-color 0xFFFFFF}}]
-  (reset! stage (new-stage background-color))
+  (reset! stage (new-stage background-color true)) ;; interactive
   (reset! renderer (.autoDetectRenderer js/PIXI width height))
   (js/requestAnimFrame animate-loop)
   (let [render-channel (chan channel-buffer-size)
@@ -345,6 +403,11 @@
             (handle-message message))
           (recur (<! render-channel))))
     {:view view :render render-channel :input input-channel}))
+
+(defn put-messages!
+  "Puts the messages from the provided seq onto the provided render channel."
+  [render-channel messages]
+  (dorun (map #(put! render-channel %) messages)))
 
 (defn- rand-between
   "Returns a random number between low (inclusive) and high (exclusive)."
@@ -432,6 +495,7 @@
   [:container key options & children]
   [:sprite key texture options]
   [:movie-clip key [textures] options]
+  [:update key properties]
   [:point x y]
   [:texture texture-expression]
     ;; Valid Texture expressions:
