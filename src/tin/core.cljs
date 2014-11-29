@@ -95,6 +95,11 @@
 (defn- canvas->texture [canvas]
   (.fromCanvas (.-Texture js/PIXI) canvas))
 
+(defn- point->map
+  "Converts a pixi Point object to an {:x :y} map"
+  [point]
+  {:x (.-x point), :y (.-y point)})
+
 (declare handle-message)
 
 (defn- set-property!
@@ -180,7 +185,7 @@
 
 (def ^:private input-events
   #{:click :mouse-down :mouse-up :mouse-up-outside :mouse-over :mouse-out
-    :tap :touch-start :touch-end :touch-end-outside})
+    :tap :touch-start :touch-end :touch-end-outside :mouse-move :touch-move})
 
 (defn set-input-function!
   [object event fn]
@@ -194,7 +199,9 @@
     :tap (set! (.-tap object) fn)
     :touch-start (set! (.-touchstart object) fn)
     :touch-end (set! (.-touchend object) fn)
-    :touch-end-outside (set! (.-touchendoutside object) fn)))
+    :touch-end-outside (set! (.-touchendoutside object) fn)
+    :mouse-move (set! (.-mousemove object) fn)
+    :touch-move (set! (.-touchmove object) fn)))
 
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
@@ -245,9 +252,21 @@
        (fn [data]
          (put! event-channel {:topic (properties event)
                               :key key
-                              :coordinates (.-global data)
-                              :target (.-target data)
-                              :event (.-originalEvent data)}))))))
+                              :data data}))))))
+
+(defn interaction-global-coordinates
+  "Gets the global coordinates of an interaction event as an {:x :y} map."
+  [interaction-data]
+  (point->map (.-global interaction-data)))
+
+(defn interaction-coordinates
+  "Gets the coordinates of an interaction event in the coordinate system of the
+  display object with the provided key as an {:x :y} map. The key must map to
+  exactly one display object."
+  [key interaction-data]
+  (assert (= 1 (count (@display-objects key))))
+  (point->map (.getLocalPosition interaction-data
+                                 (first (@display-objects key)))))
 
 (defn- handle-point
   "Instantiates and returns a new pixi.js Point from a message"
@@ -389,10 +408,12 @@
   channels as :render and :input. The render channel is what you should send
   draw messages to. You can listen on the input channel for user input
   messages."
-  [& {:keys [width height background-color]
-      :or {width 500, height 500, background-color 0xFFFFFF}}]
+  [& {:keys [width height background-color view transparent? antialias?]
+      :or {width 500, height 500, background-color 0xFFFFFF, view nil,
+           transparent? false, antialias? false}}]
   (reset! stage (new-stage background-color true)) ;; interactive
-  (reset! renderer (.autoDetectRenderer js/PIXI width height))
+  (reset! renderer (.autoDetectRenderer js/PIXI width height view
+                                        transparent? antialias?))
   (js/requestAnimFrame animate-loop)
   (let [render-channel (chan channel-buffer-size)
         input-channel (chan channel-buffer-size)
