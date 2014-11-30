@@ -1,7 +1,6 @@
 (ns tin.examples.example6
   (:require
-   [tin.core :refer [events put-messages! interaction-coordinates
-                     interaction-target-coordinates]]
+   [tin.core :refer [events put-messages! interaction-local-coordinates]]
    [cljs.core.async :refer [<! >! chan sub]])
   (:require-macros [cljs.core.async.macros :refer [go]]))
 
@@ -22,5 +21,5 @@
   (go
     (while true
       (let [{key :key data :data} (<! move-channel)]
-        (prn "mouse move inside" key)
-        (prn "coordinates " (interaction-target-coordinates data))))))
+        (prn "example6 loop")
+        (prn (interaction-local-coordinates data))))))
