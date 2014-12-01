@@ -252,8 +252,6 @@
       (set-input-function!
        object event
        (fn [data]
-         (.log js/console "add-input-callbacks!")
-         (.dir js/console (.-position (.-target data)))
          (put! event-channel
                {:topic (properties event)
                 :key key
@@ -270,11 +268,12 @@
   "Gets the coordinates of an interaction event in the coordinate system of the
   target of the event."
   [interaction-data]
-  (let [target (interaction-data :target)]
-  (js* "0; debugger;")
-  (point->map (.getLocalPosition
-               (.-prototype (.-InteractionData js/PIXI))
-               target))))
+  (let [target (interaction-data :target)
+        global (interaction-data :global)
+        InteractionData (.-InteractionData js/PIXI)
+        tmp-data (InteractionData.)]
+    (set! (.-global tmp-data) global)
+    (point->map (.getLocalPosition tmp-data target))))
 
   (defn- handle-point
   "Instantiates and returns a new pixi.js Point from a message"
@@ -418,8 +417,6 @@
               (when (and (.hitTest manager item (.-mouse manager))
                          (not= item stage)
                          (.-mousemoveinside item))
-                (.log js/console "attach-mouse-move-handler!")
-                (.dir js/console (.-position (.-target event)))
                 (set! (.-originalEvent (.-mouse manager))
                       (.-originalEvent event))
                 (.mousemoveinside item event)))))))

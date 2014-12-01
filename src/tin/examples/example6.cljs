@@ -21,5 +21,4 @@
   (go
     (while true
       (let [{key :key data :data} (<! move-channel)]
-        (prn "example6 loop")
         (prn (interaction-local-coordinates data))))))
