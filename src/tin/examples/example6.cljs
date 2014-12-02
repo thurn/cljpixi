@@ -20,5 +20,6 @@
   (put-messages! render-channel messages)
   (go
     (while true
-      (let [{key :key data :data} (<! move-channel)]
-        (prn (interaction-local-coordinates data))))))
+      (let [{key :key {event :original-event :as data} :data} (<! move-channel)]
+        (if (> (.-which event) 0)
+            (prn (interaction-local-coordinates data)))))))

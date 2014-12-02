@@ -205,15 +205,25 @@
     :touch-move (set! (.-touchmove object) fn)
     :mouse-move-inside (set! (.-mousemoveinside object) fn)))
 
+(defn overwrite
+  "Default update function for :update and :tween, overwrites the existing value
+  with the new value."
+  [old new]
+  new)
+
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
   of the provided pixi.js object."
-  [object properties]
-  (dorun
-   (map
-    (fn [entry]
-      (set-property! object (key entry) (handle-message (val entry))))
-    (filter #(not (contains? input-events (key %))) properties))))
+  ([object properties] (set-properties! object properties overwrite))
+  ([object properties function]
+     (dorun
+      (map
+       (fn [entry]
+         (set-property! object
+                        (key entry)
+                        (function (get-property object (key entry))
+                                  (handle-message (val entry)))))
+       (filter #(not (contains? input-events (key %))) properties)))))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -275,12 +285,12 @@
     (set! (.-global tmp-data) global)
     (point->map (.getLocalPosition tmp-data target))))
 
-  (defn- handle-point
+(defn- handle-point
   "Instantiates and returns a new pixi.js Point from a message"
   [[:point x y]]
   (new-point x y))
 
-  (defn- handle-texture
+(defn- handle-texture
   "Instantiates and returns a new pixi.js Texture from a message"
   [[:texture [type argument] properties]]
   (let [texture
@@ -291,7 +301,7 @@
     (set-properties! texture properties)
     texture))
 
-  (defn- handle-sprite
+(defn- handle-sprite
   "Instantiates and returns a new pixi.js Sprite, which is also immediately
   added as a child of the global stage."
   [[:sprite key texture properties]]
@@ -299,102 +309,111 @@
     (add-input-callbacks! key sprite properties)
     (add-to-stage! sprite key properties)))
 
-  (defn- handle-movie-clip
+(defn- handle-movie-clip
   "Instantiates a pixi.js MovieClip and adds it to the global stage."
   [[:movie-clip key textures properties]]
   (let [clip (new-movie-clip (clj->js (map handle-message textures)))]
     (add-input-callbacks! key clip properties)
     (add-to-stage! clip key properties)))
 
-  (defn- handle-update
+(defn- handle-update
   "Updates the properties of an existing DisplayObject. Cannot be used to set
   user input functions."
-  [[:update key properties]]
+  [[:update key properties function]]
   (doseq [object (@display-objects key)]
-    (set-properties! object properties)))
+    (set-properties! object properties function)))
 
-  (defn- handle-container
-    "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
+(defn- handle-container
+  "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
   also be added as a child of the global stage."
-    [[:container name properties & children]]
-    (let [container (new-display-object-container)]
-      (dorun (map #(.addChild container (handle-message %)) children))
-      (add-input-callbacks! name container properties)
-      (add-to-stage! container name properties)))
+  [[:container name properties & children]]
+  (let [container (new-display-object-container)]
+    (dorun (map #(.addChild container (handle-message %)) children))
+    (add-input-callbacks! name container properties)
+    (add-to-stage! container name properties)))
 
-  (defn- new-tween
-    "Returns a new Tween instance with the provided target object."
-    [target properties]
-    (.get (.-Tween js/createjs) target (clj->js properties)))
+(defn- new-tween
+  "Returns a new Tween instance with the provided target object."
+  [target properties]
+  (.get (.-Tween js/createjs) target (clj->js properties)))
 
-  (defn point-binary-function
-    "Takes a binary function and returns a function which will apply it to
+(defn point-object-binary-function
+  "Takes a binary function and returns a function which lifts it to apply to
+   Point objects. The resulting function will take input points (x1, y1) and
+   (x2, y2) and will return ((fn x1 x2), (fn y1 y2))."
+  [binary-function]
+  (fn [point1 point2]
+    (new-point (binary-function (.-x point1) (.-x point2))
+               (binary-function (.-y point1) (.-y point2)))))
+
+(defn point-binary-function
+  "Takes a binary function and returns a function which will apply it to
   old-point, a pixi.js point object and new-point, an {:x :y} formatted map, and
   return an {:x :y} map of the result."
-    [binary-function]
-    (fn [old-point new-point]
-      {:x (binary-function (.-x old-point) (:x new-point))
-       :y (binary-function (.-y old-point) (:y new-point))}))
+  [binary-function]
+  (fn [old-point new-point]
+    {:x (binary-function (.-x old-point) (:x new-point))
+     :y (binary-function (.-y old-point) (:y new-point))}))
 
-  (defn- handle-tween-action
-    "Handles the :tween action"
-    [object tween-options [:tween property value
-                           & {:keys [duration ease function]
-                              :or {duration 1000
-                                   ease (tin.ease/linear)
-                                   function #(identity %2)}}]]
-    (let [current-value (js->clj (get-property object property))
-          target (function current-value value)]
-      (if (map? value)
-        (.to (new-tween current-value tween-options)
-             (clj->js target) duration ease)
-        (.to (new-tween object tween-options)
-             (clj->js {property target}) duration ease))))
+(defn- handle-tween-action
+  "Handles the :tween action"
+  [object tween-options [:tween property value
+                         & {:keys [duration ease function]
+                            :or {duration 1000
+                                 ease (tin.ease/linear)
+                                 function overwrite}}]]
+  (let [current-value (js->clj (get-property object property))
+        target (function current-value value)]
+    (if (map? value)
+      (.to (new-tween current-value tween-options)
+           (clj->js target) duration ease)
+      (.to (new-tween object tween-options)
+           (clj->js {property target}) duration ease))))
 
-  (defn- handle-animation-action
-    "Applies a TweenJS action to the provided tween."
-    [object tween-options action]
-    (case (first action)
-      :tween
-      (handle-tween-action object tween-options action)
-      :play-clip
-      (let [[:play-clip frame] action]
-        (if frame (.gotoAndPlay object frame) (.play object)))
-      :stop-clip
-      (let [[:stop-clip frame] action]
-        (if frame (.gotoAndStop object frame) (.stop object)))))
+(defn- handle-animation-action
+  "Applies a TweenJS action to the provided tween."
+  [object tween-options action]
+  (case (first action)
+    :tween
+    (handle-tween-action object tween-options action)
+    :play-clip
+    (let [[:play-clip frame] action]
+      (if frame (.gotoAndPlay object frame) (.play object)))
+    :stop-clip
+    (let [[:stop-clip frame] action]
+      (if frame (.gotoAndStop object frame) (.stop object)))))
 
-  (defn- handle-animation
-    "Creates a new TweenJS Tween object for each object with the provided key and
+(defn- handle-animation
+  "Creates a new TweenJS Tween object for each object with the provided key and
   starts it with the supplied actions."
-    [[:animation key tween-options & actions]]
-    (doseq [object (@display-objects key ()) action actions]
-      (handle-animation-action object tween-options action)))
+  [[:animation key tween-options & actions]]
+  (doseq [object (@display-objects key ()) action actions]
+    (handle-animation-action object tween-options action)))
 
-  ;; TODO: Child objects of e.g. a display container are being added to the global
-  ;; stage as well as to their parent.
+;; TODO: Child objects of e.g. a display container are being added to the global
+;; stage as well as to their parent.
 
-  ;; TODO: Stop this weird handling of both messages and values - draw the
-  ;; correct distinction
+;; TODO: Stop this weird handling of both messages and values - draw the
+;; correct distinction
 
-  ;; dispatch?
-  (defn- handle-message
-    "Parses the provided message and renders the contents to the canvas."
-    [message]
-    (if (sequential? message)
-      (do
-        (case (first message)
-          :messages (dorun (map handle-message (rest message)))
-          :point (handle-point message)
-          :texture (handle-texture message)
-          :sprite (handle-sprite message)
-          :movie-clip (handle-movie-clip message)
-          :update (handle-update message)
-          :container (handle-container message)
-          :animation (handle-animation message)))
-      message))
+;; dispatch?
+(defn- handle-message
+  "Parses the provided message and renders the contents to the canvas."
+  [message]
+  (if (sequential? message)
+    (do
+      (case (first message)
+        :messages (dorun (map handle-message (rest message)))
+        :point (handle-point message)
+        :texture (handle-texture message)
+        :sprite (handle-sprite message)
+        :movie-clip (handle-movie-clip message)
+        :update (handle-update message)
+        :container (handle-container message)
+        :animation (handle-animation message)))
+    message))
 
-  (defn- load-assets
+(defn- load-assets
   "Loads assets with the provided paths by inspecting their file extensions.
   Returns a channel which will have the message :loaded put! onto it once
   the asset loading is completed."
@@ -405,7 +424,7 @@
     (.load loader)
     result-channel))
 
-  (defn- attach-mouse-move-handler!
+(defn- attach-mouse-move-handler!
   "Attaches a handler for the custom :mouse-move-inside event."
   [stage]
   (let [manager (.-interactionManager stage)]
@@ -421,7 +440,7 @@
                       (.-originalEvent event))
                 (.mousemoveinside item event)))))))
 
-  (defn initialize
+(defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
   all drawing.
 
@@ -449,117 +468,102 @@
           (recur (<! render-channel))))
     {:view view :render render-channel :input input-channel}))
 
-  (defn put-messages!
+(defn put-messages!
   "Puts the messages from the provided seq onto the provided render channel."
   [render-channel messages]
   (dorun (map #(put! render-channel %) messages)))
 
-  (defn- rand-between
+(defn- rand-between
   "Returns a random number between low (inclusive) and high (exclusive)."
   [low high]
   (+ low (rand-int (- high low))))
 
-  (defn example1 [render-channel input-channel]
-    (let [messages
-          [[:load "resources/example1/bunny.png"]
-           [:sprite :spinning-bunny
-            [:texture [:frame "resources/example1/bunny.png"]]
-            {:anchor [:point 0.5 0.5] :position [:point 400 300]}]
-           [:sprite :moving-bunny
-            [:texture [:frame "resources/example1/bunny.png"]]
-            {:anchor [:point 0.5 0.5] :position [:point 50 50]}]
-           [:animation :spinning-bunny {:loop true}
-            [:tween :rotation (* 2 Math/PI) {:duration 1000}]]
-           [:animation :moving-bunny {:loop true}
-            [:tween :position {:x 500 :y 500} :duration 5000
-             :function (point-binary-function +)]]]]
-      (dorun (map #(put! render-channel %) messages))))
+(defn example2-sprites
+  []
+  (let [frames ["eggHead.png", "flowerTop.png", "helmlok.png", "skully.png"]
+        container [:container :aliens {:position [:point 400 300]}]
+        make-sprite (fn []
+                      [:sprite :alien
+                       [:texture [:frame (rand-nth frames)]]
+                       {:anchor [:point 0.5 0.5]
+                        :position [:point (rand-between -400 400)
+                                   (rand-between -300 300)]}])]
+    (into container (repeatedly 100 make-sprite))))
 
-  (defn example2-sprites
-    []
-    (let [frames ["eggHead.png", "flowerTop.png", "helmlok.png", "skully.png"]
-          container [:container :aliens {:position [:point 400 300]}]
-          make-sprite (fn []
-                        [:sprite :alien
-                         [:texture [:frame (rand-nth frames)]]
-                         {:anchor [:point 0.5 0.5]
-                          :position [:point (rand-between -400 400)
-                                     (rand-between -300 300)]}])]
-      (into container (repeatedly 100 make-sprite))))
+(defn example2 [render-channel input-channel]
+  (let [messages
+        [[:load "resources/example2/SpriteSheet.json"]
+         (example2-sprites)
+         [:animation :alien {:loop true}
+          [:tween :rotation (* 2 Math/PI) :duration 1000]]
+         [:animation :aliens {:loop true}
+          [:tween :scale {:x 0.1 :y 0.1} :duration 3000
+           :ease #(Math/sin (* Math/PI %))]]
+         [:animation :aliens {:loop true}
+          [:tween :rotation (* Math/PI 2) :duration 20000]]]]
+    (dorun (map #(put! render-channel %) messages))))
 
-  (defn example2 [render-channel input-channel]
-    (let [messages
-          [[:load "resources/example2/SpriteSheet.json"]
-           (example2-sprites)
-           [:animation :alien {:loop true}
-            [:tween :rotation (* 2 Math/PI) :duration 1000]]
-           [:animation :aliens {:loop true}
-            [:tween :scale {:x 0.1 :y 0.1} :duration 3000
-             :ease #(Math/sin (* Math/PI %))]]
-           [:animation :aliens {:loop true}
-            [:tween :rotation (* Math/PI 2) :duration 20000]]]]
-      (dorun (map #(put! render-channel %) messages))))
+;; Todo: Nested defns?
 
-  ;; Todo: Nested defns?
+;; Todo: Don't require having *each* movie clip have a separate vector of
+;; textures, let users have a collection of textures under a key
+(defn example3 [render-channel input-channel]
+  (let [make-texture
+        (fn [i] [:texture [:frame (str "Explosion_Sequence_A " i ".png")]])
+        make-movie-clip
+        (fn [i]
+          (let [scale (rand-between 0.75 1.5)]
+            [:movie-clip (str "explosion" i) (map make-texture (range 1 27))
+             {:position [:point (rand-int 800) (rand-int 600)]
+              :rotation (rand-int Math/PI) :anchor [:point 0.5 0.5]
+              :scale [:point scale scale] :loop true}]))
+        make-animation
+        (fn [i]
+          [:animation (str "explosion" i) {} [:play-clip (rand-between 1 27)]])
+        messages
+        [[:load "resources/example3/SpriteSheet.json"]
+         (into [:messages] (map make-movie-clip (range 50)))
+         (into [:messages] (map make-animation (range 50)))]]
+    (dorun (map #(put! render-channel %) messages))))
 
-  ;; Todo: Don't require having *each* movie clip have a separate vector of
-  ;; textures, let users have a collection of textures under a key
-  (defn example3 [render-channel input-channel]
-    (let [make-texture
-          (fn [i] [:texture [:frame (str "Explosion_Sequence_A " i ".png")]])
-          make-movie-clip
-          (fn [i]
-            (let [scale (rand-between 0.75 1.5)]
-              [:movie-clip (str "explosion" i) (map make-texture (range 1 27))
-               {:position [:point (rand-int 800) (rand-int 600)]
-                :rotation (rand-int Math/PI) :anchor [:point 0.5 0.5]
-                :scale [:point scale scale] :loop true}]))
-          make-animation
-          (fn [i]
-            [:animation (str "explosion" i) {} [:play-clip (rand-between 1 27)]])
-          messages
-          [[:load "resources/example3/SpriteSheet.json"]
-           (into [:messages] (map make-movie-clip (range 50)))
-           (into [:messages] (map make-animation (range 50)))]]
-      (dorun (map #(put! render-channel %) messages))))
+;; Todo: support from-frames helper function constructors for sprites & clips
 
-  ;; Todo: support from-frames helper function constructors for sprites & clips
+;; Todo: convert from clojure property names to javascript camelcase names
+;; correctly.
 
-  ;; Todo: convert from clojure property names to javascript camelcase names
-  ;; correctly.
+;; Todo: Is there a way to fold options like :loop into the body of :tween?
 
-  ;; Todo: Is there a way to fold options like :loop into the body of :tween?
+;; Todo: Get rid of [:point] and just do {:x :y}?
 
-  ;; Todo: Get rid of [:point] and just do {:x :y}?
+;; Todo: Make texture things arguments instead of [:texture]
+;; (or get rid of textures entirely)
 
-  ;; Todo: Make texture things arguments instead of [:texture]
-  ;; (or get rid of textures entirely)
+(comment ;; Message Format
+  [:messages & messages]
+  [:container key options & children]
+  [:sprite key texture options]
+  [:movie-clip key [textures] options]
+  [:update key properties function]
+  ;; update-fn is the same as the function you pass to :tween
+  [:point x y]
+  [:texture texture-expression]
+  ;; Valid Texture expressions:
+  [:image "path.png"]
+  [:canvas canvas-object]
+  [:frame frame-id]
+  [:animation key options & actions]
+  ;; Valid Actions:
+  [:tween property value {:function f :duration d :ease e}]
+  ;; Value can be a number or {:x :y} map for PIXI.Point properties
+  ;; Function takes 2 args - previous and value, and should return the
+  ;; new value to tween to. Default is to discard previous, but you can e.g.
+  ;; pass + to make it behave like a += operation.
+  ;; Note that the function is not re-evalutated with the :loop option,
+  ;; looping tweens are always between two fixed values.
 
-  (comment ;; Message Format
-    [:messages & messages]
-    [:container key options & children]
-    [:sprite key texture options]
-    [:movie-clip key [textures] options]
-    [:update key properties]
-    [:point x y]
-    [:texture texture-expression]
-    ;; Valid Texture expressions:
-    [:image "path.png"]
-    [:canvas canvas-object]
-    [:frame frame-id]
-    [:animation key options & actions]
-    ;; Valid Actions:
-    [:tween property value {:function f :duration d :ease e}]
-    ;; Value can be a number or {:x :y} map for PIXI.Point properties
-    ;; Function takes 2 args - previous and value, and should return the
-    ;; new value to tween to. Default is to discard previous, but you can e.g.
-    ;; pass + to make it behave like a += operation.
-    ;; Note that the function is not re-evalutated with the :loop option,
-    ;; looping tweens are always between two fixed values.
-
-    [:play-clip frame?]
-    [:stop-clip frame?]
-    [:timeline options & tweens]
-    [:load & filenames] ;; Blocks rendering until loaded.
-    [:clear] ;; Remove everything in scene.
-    )
+  [:play-clip frame?]
+  [:stop-clip frame?]
+  [:timeline options & tweens]
+  [:load & filenames] ;; Blocks rendering until loaded.
+  [:clear] ;; Remove everything in scene.
+  )
