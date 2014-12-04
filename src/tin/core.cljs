@@ -187,8 +187,7 @@
 
 (def ^:private input-events
   #{:click :mouse-down :mouse-up :mouse-up-outside :mouse-over :mouse-out
-    :tap :touch-start :touch-end :touch-end-outside :mouse-move :touch-move
-    :mouse-move-inside})
+    :tap :touch-start :touch-end :touch-end-outside :mouse-move :touch-move})
 
 (defn set-input-function!
   [object event fn]
@@ -204,8 +203,7 @@
     :touch-end (set! (.-touchend object) fn)
     :touch-end-outside (set! (.-touchendoutside object) fn)
     :mouse-move (set! (.-mousemove object) fn)
-    :touch-move (set! (.-touchmove object) fn)
-    :mouse-move-inside (set! (.-mousemoveinside object) fn)))
+    :touch-move (set! (.-touchmove object) fn)))
 
 (defn overwrite
   "Default update function for :update and :tween, overwrites the existing value
@@ -421,22 +419,6 @@
     (.load loader)
     result-channel))
 
-(defn- attach-mouse-move-handler!
-  "Attaches a handler for the custom :mouse-move-inside event."
-  [stage]
-  (let [manager (.-interactionManager stage)]
-    (set! (.-mousemove stage)
-          (fn [event]
-            (if (.-dirty manager)
-              (.rebuildInteractiveGraph manager))
-            (doseq [item (.-interactiveItems manager)]
-              (when (and (.hitTest manager item (.-mouse manager))
-                         (not= item stage)
-                         (.-mousemoveinside item))
-                (set! (.-originalEvent (.-mouse manager))
-                      (.-originalEvent event))
-                (.mousemoveinside item event)))))))
-
 (defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
   all drawing.
@@ -457,7 +439,6 @@
   (let [render-channel (chan channel-buffer-size)
         input-channel (chan channel-buffer-size)
         view (.-view @renderer)]
-    (attach-mouse-move-handler! @stage)
     (go (loop [[type & _ :as message] (<! render-channel)]
           (if (= type :load)
             (<! (load-assets message))  ; Block until assets are loaded.
