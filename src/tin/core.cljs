@@ -121,6 +121,7 @@
     :height (set! (.-height object) value)
     :hit-area (set! (.-hitArea object) value)
     :interactive? (set! (.-interactive object) value)
+    :loop? (set! (.-loop object) value)
     :mask (set! (.-mask object) value)
     :pivot (set! (.-pivot object) value)
     :points (set! (.-points object) value)
@@ -162,6 +163,7 @@
     :hit-area (.-hitArea object)
     :interactive? (.-interactive object)
     :mask (.-mask object)
+    :loop? (.-loop object)
     :pivot (.-pivot object)
     :points (.-points object)
     :position (.-position object)
@@ -211,19 +213,19 @@
   [old new]
   new)
 
+; TODO: rewrite using doseq
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
   of the provided pixi.js object."
-  ([object properties] (set-properties! object properties overwrite))
-  ([object properties function]
-     (dorun
-      (map
-       (fn [entry]
-         (set-property! object
-                        (key entry)
-                        (function (get-property object (key entry))
-                                  (handle-message (val entry)))))
-       (filter #(not (contains? input-events (key %))) properties)))))
+  [object properties & {:keys [function] :or {function overwrite}}]
+  (dorun
+   (map
+    (fn [entry]
+      (set-property! object
+                     (key entry)
+                     (function (get-property object (key entry))
+                               (handle-message (val entry)))))
+    (filter #(not (contains? input-events (key %))) properties))))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -269,21 +271,16 @@
                        :global (.-global data)
                        :original-event (.-originalEvent data)}}))))))
 
-(defn interaction-global-coordinates
-  "Gets the global coordinates of an interaction event as an {:x :y} map."
-  [interaction-data]
-  (point->map (interaction-data :global)))
-
 (defn interaction-local-coordinates
   "Gets the coordinates of an interaction event in the coordinate system of the
-  target of the event."
+  target of the event as a Point object."
   [interaction-data]
   (let [target (interaction-data :target)
         global (interaction-data :global)
         InteractionData (.-InteractionData js/PIXI)
         tmp-data (InteractionData.)]
     (set! (.-global tmp-data) global)
-    (point->map (.getLocalPosition tmp-data target))))
+    (.getLocalPosition tmp-data target)))
 
 (defn- handle-point
   "Instantiates and returns a new pixi.js Point from a message"
@@ -319,9 +316,9 @@
 (defn- handle-update
   "Updates the properties of an existing DisplayObject. Cannot be used to set
   user input functions."
-  [[:update key properties function]]
+  [[:update key properties & {:keys [function] :or {function overwrite}}]]
   (doseq [object (@display-objects key)]
-    (set-properties! object properties function)))
+    (set-properties! object properties :function function)))
 
 (defn- handle-container
   "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
@@ -339,8 +336,8 @@
 
 (defn point-object-binary-function
   "Takes a binary function and returns a function which lifts it to apply to
-   Point objects. The resulting function will take input points (x1, y1) and
-   (x2, y2) and will return ((fn x1 x2), (fn y1 y2))."
+  Point objects. The resulting function will take input points (x1, y1) and
+  (x2, y2) and will return ((fn x1 x2), (fn y1 y2))."
   [binary-function]
   (fn [point1 point2]
     (new-point (binary-function (.-x point1) (.-x point2))
@@ -478,33 +475,6 @@
   [low high]
   (+ low (rand-int (- high low))))
 
-(defn example2-sprites
-  []
-  (let [frames ["eggHead.png", "flowerTop.png", "helmlok.png", "skully.png"]
-        container [:container :aliens {:position [:point 400 300]}]
-        make-sprite (fn []
-                      [:sprite :alien
-                       [:texture [:frame (rand-nth frames)]]
-                       {:anchor [:point 0.5 0.5]
-                        :position [:point (rand-between -400 400)
-                                   (rand-between -300 300)]}])]
-    (into container (repeatedly 100 make-sprite))))
-
-(defn example2 [render-channel input-channel]
-  (let [messages
-        [[:load "resources/example2/SpriteSheet.json"]
-         (example2-sprites)
-         [:animation :alien {:loop true}
-          [:tween :rotation (* 2 Math/PI) :duration 1000]]
-         [:animation :aliens {:loop true}
-          [:tween :scale {:x 0.1 :y 0.1} :duration 3000
-           :ease #(Math/sin (* Math/PI %))]]
-         [:animation :aliens {:loop true}
-          [:tween :rotation (* Math/PI 2) :duration 20000]]]]
-    (dorun (map #(put! render-channel %) messages))))
-
-;; Todo: Nested defns?
-
 ;; Todo: Don't require having *each* movie clip have a separate vector of
 ;; textures, let users have a collection of textures under a key
 (defn example3 [render-channel input-channel]
@@ -543,7 +513,7 @@
   [:container key options & children]
   [:sprite key texture options]
   [:movie-clip key [textures] options]
-  [:update key properties function]
+  [:update key properties :function function]
   ;; update-fn is the same as the function you pass to :tween
   [:point x y]
   [:texture texture-expression]

@@ -1,7 +1,8 @@
 (ns tin.examples.example6
   (:require
-   [tin.core :refer [events put-messages! interaction-local-coordinates]]
-   [cljs.core.async :refer [<! >! chan sub]])
+   [tin.core :refer [events put-messages! interaction-local-coordinates
+                     point-object-binary-function]]
+   [cljs.core.async :refer [<! >! chan sub put!]])
   (:require-macros [cljs.core.async.macros :refer [go]]))
 
 (defn bunny [i x y]
@@ -16,10 +17,15 @@
 (def move-channel (chan))
 (sub events "move" move-channel)
 
+(defn update-position
+  [key interaction-data]
+  [:update key {:position (interaction-local-coordinates interaction-data)}
+   :function (point-object-binary-function +)])
+
 (defn example6 [render-channel input-channel]
   (put-messages! render-channel messages)
   (go
     (while true
       (let [{key :key {event :original-event :as data} :data} (<! move-channel)]
-        (if (> (.-which event) 0)
-            (prn (interaction-local-coordinates data)))))))
+        (if (> (.-which event) 0) ; Mouse is down
+          (put! render-channel (update-position key data)))))))
