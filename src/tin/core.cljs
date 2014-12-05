@@ -101,6 +101,8 @@
   {:x (.-x point), :y (.-y point)})
 
 (declare handle-message)
+(declare value->expr)
+(declare expr->value)
 
 (defn- set-property!
   "Sets a property on a pixi.js object. Maps keywords to known properties, but
@@ -211,7 +213,21 @@
   [old new]
   new)
 
-; TODO: rewrite using doseq
+(defn- expr-wrap-first
+  "Takes a two argument function and returns a value which will call value->expr
+  on the *first* argument, but not the second, and will call expr->value on the
+  result."
+  [function]
+  (fn [x y]
+    (expr->value (function (value->expr x) y))))
+
+(defn- expr-wrap
+  "Like expr-wrap-first, but applies value->expr on both arguments."
+  [function]
+  (fn [x y]
+    (expr->value (function (value->expr x) (value->expr y)))))
+
+;; TODO: rewrite using doseq
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
   of the provided pixi.js object."
@@ -219,10 +235,10 @@
   (dorun
    (map
     (fn [entry]
-      (set-property! object
-                     (key entry)
-                     (function (get-property object (key entry))
-                               (handle-message (val entry)))))
+      (set-property! object (key entry)
+                     ((expr-wrap-first function)
+                      (get-property object (key entry))
+                      (val entry))))
     (filter #(not (contains? input-events (key %))) properties))))
 
 (def ^:private last-timestamp
@@ -358,25 +374,54 @@
                                  ease (tin.ease/linear)
                                  function overwrite}}]]
   (let [current-value (js->clj (get-property object property))
-        target (function current-value value)]
+        target ((expr-wrap-first function) current-value value)]
     (if (map? value)
       (.to (new-tween current-value tween-options)
            (clj->js target) duration ease)
       (.to (new-tween object tween-options)
            (clj->js {property target}) duration ease))))
 
+(defn- handle-draggable
+  "Handles marking an object with :draggable."
+  [object options [:draggable & {:keys [function] :or {function overwrite}}]]
+  (letfn [(mousedown [data]
+            (set! (.-dragging object) true)
+            (set! (.-data object) data))
+          (mouseup []
+            (set! (.-dragging object) false)
+            (set! (.-data object) nil))
+          (mousemove []
+            (when (.-dragging object)
+              (let [new-position ((expr-wrap function)
+                                  (.-position object)
+                                  (.getLocalPosition (.-data object)
+                                                     (.-parent object)))]
+                (set! (.-x (.-position object)) (.-x new-position))
+                (set! (.-y (.-position object)) (.-y new-position)))))]
+    (set! (.-interactive object) true)
+    (set! (.-mousedown object) mousedown)
+    (set! (.-touchstart object) mousedown)
+    (set! (.-mouseup object) mouseup)
+    (set! (.-mouseupoutside object) mouseup)
+    (set! (.-touchend object) mouseup)
+    (set! (.-touchendoutside object) mouseup)
+    (set! (.-mousemove object) mousemove)
+    (set! (.-touchmove object) mousemove)))
+
 (defn- handle-animation-action
   "Applies a TweenJS action to the provided tween."
-  [object tween-options action]
+  [object options action]
   (case (first action)
     :tween
-    (handle-tween-action object tween-options action)
+    (handle-tween-action object options action)
     :play-clip
     (let [[:play-clip frame] action]
       (if frame (.gotoAndPlay object frame) (.play object)))
     :stop-clip
     (let [[:stop-clip frame] action]
-      (if frame (.gotoAndStop object frame) (.stop object)))))
+      (if frame (.gotoAndStop object frame) (.stop object)))
+    :draggable
+    (handle-draggable object options action)))
 
 (defn- handle-animation
   "Creates a new TweenJS Tween object for each object with the provided key and
@@ -391,21 +436,37 @@
 ;; TODO: Stop this weird handling of both messages and values - draw the
 ;; correct distinction
 
+(defn- value->expr
+  "Turns the provided Pixi.js object into an expression (if possible)."
+  [object]
+  (cond
+   (instance? (.-Point js/PIXI) object) [:point (.-x object) (.-y object)]
+   :otherwise object))
+
+(defn- expr->value
+  "Returns a Pixi.js object based on the provided value message, or returns the
+  input unchanged if it was a primitive (non-sequential) value."
+  [message]
+  (if (sequential? message)
+    (case (first message)
+      :point (handle-point message)
+      :texture (handle-texture message))
+    message))
+
 ;; dispatch?
 (defn- handle-message
   "Parses the provided message and renders the contents to the canvas."
   [message]
   (if (sequential? message)
-    (do
-      (case (first message)
-        :messages (dorun (map handle-message (rest message)))
-        :point (handle-point message)
-        :texture (handle-texture message)
-        :sprite (handle-sprite message)
-        :movie-clip (handle-movie-clip message)
-        :update (handle-update message)
-        :container (handle-container message)
-        :animation (handle-animation message)))
+    (case (first message)
+      :messages (dorun (map handle-message (rest message)))
+      :point (handle-point message)
+      :texture (handle-texture message)
+      :sprite (handle-sprite message)
+      :movie-clip (handle-movie-clip message)
+      :update (handle-update message)
+      :container (handle-container message)
+      :animation (handle-animation message))
     message))
 
 (defn- load-assets
@@ -502,6 +563,7 @@
   [:image "path.png"]
   [:canvas canvas-object]
   [:frame frame-id]
+  ;; TODO rename this to :action
   [:animation key options & actions]
   ;; Valid Actions:
   [:tween property value {:function f :duration d :ease e}]
@@ -511,10 +573,18 @@
   ;; pass + to make it behave like a += operation.
   ;; Note that the function is not re-evalutated with the :loop option,
   ;; looping tweens are always between two fixed values.
-
   [:play-clip frame?]
   [:stop-clip frame?]
   [:timeline options & tweens]
   [:load & filenames] ;; Blocks rendering until loaded.
   [:clear] ;; Remove everything in scene.
+  )
+
+(comment ;; Action Format
+  [:tween property value :function f :duration d :ease e]
+  [:play-clip :frame frame]
+  [:stop-clip :frame frame]
+  [:update key properties :function f]
+  [:draggable :function f]
+  [:not-draggable]
   )
