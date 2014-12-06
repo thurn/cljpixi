@@ -210,8 +210,8 @@
 (defn overwrite
   "Default update function for :update and :tween, overwrites the existing value
   with the new value."
-  [old new]
-  new)
+  [& args]
+  (last args))
 
 (defn- expr-wrap-first
   "Takes a two argument function and returns a value which will call value->expr
@@ -384,20 +384,26 @@
 (defn- handle-draggable
   "Handles marking an object with :draggable."
   [object options [:draggable & {:keys [function] :or {function overwrite}}]]
-  (letfn [(mousedown [data]
-            (set! (.-dragging object) true)
-            (set! (.-data object) data))
-          (mouseup []
-            (set! (.-dragging object) false)
-            (set! (.-data object) nil))
-          (mousemove []
-            (when (.-dragging object)
-              (let [new-position ((expr-wrap function)
-                                  (.-position object)
-                                  (.getLocalPosition (.-data object)
-                                                     (.-parent object)))]
-                (set! (.-x (.-position object)) (.-x new-position))
-                (set! (.-y (.-position object)) (.-y new-position)))))]
+  (let [mousedown
+        (fn [data]
+          (set! (.-dragging object) true)
+          (set! (.-originalPosition object) (new-point (.-x (.-position object))
+                                                       (.-y (.-position object))))
+          (set! (.-data object) data))
+        mouseup
+        (fn []
+          (set! (.-dragging object) false)
+          (set! (.-originalPosition object) nil)
+          (set! (.-data object) nil))
+        mousemove
+        (fn []
+          (when (.-dragging object)
+            (let [new-position ((expr-wrap function)
+                                (.-originalPosition object)
+                                (.getLocalPosition (.-data object)
+                                                   (.-parent object)))]
+              (set! (.-x (.-position object)) (.-x new-position))
+              (set! (.-y (.-position object)) (.-y new-position)))))]
     (set! (.-interactive object) true)
     (set! (.-mousedown object) mousedown)
     (set! (.-touchstart object) mousedown)
