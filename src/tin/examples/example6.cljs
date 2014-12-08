@@ -18,20 +18,18 @@
 
 (defn draggable-orthogonal
   "Only allows an object to be dragged in an axial direction."
-  [[:point old-x old-y] [:point new-x new-y]]
+  [[:point old-x old-y] [:point first-x first-y] [:point new-x new-y]]
   (prn "old" old-x "," old-y)
+  (prn "first" first-x "," first-y)
   (prn "new" new-x "," new-y)
-  (if (> (Math/abs (- old-x new-x)) (Math/abs (- old-y new-y)))
+  (if (> (Math/abs (- old-x first-x)) (Math/abs (- old-y first-y)))
     [:point new-x old-y]
     [:point old-x new-y]))
 
 (def messages
   [(bunny 1 100 300)
    (bunny 2 300 300)
-   (bunny 3 500 300)
-   [:animation "bunny1" {} [:draggable]]
-   [:animation "bunny2" {} [:draggable :function draggable-vertical]]
-   [:animation "bunny3" {} [:draggable :function draggable-orthogonal]]])
+   (bunny 3 500 300)])
 
 (defn example6 [render-channel input-channel]
   (put-messages! render-channel messages))

@@ -1,6 +1,7 @@
 (ns tin.core
   (:require
    [tin.ease]
+   [tin.events :refer [add-event-support!]]
    [clojure.set :refer [intersection]]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
                             alts! timeout pub]]
@@ -222,10 +223,10 @@
     (expr->value (function (value->expr x) y))))
 
 (defn- expr-wrap
-  "Like expr-wrap-first, but applies value->expr on both arguments."
+  "Like expr-wrap-first, but applies value->expr on all arguments."
   [function]
-  (fn [x y]
-    (expr->value (function (value->expr x) (value->expr y)))))
+  (fn [& args]
+    (expr->value (apply function (map value->expr args)))))
 
 ;; TODO: rewrite using doseq
 (defn- set-properties!
@@ -318,6 +319,8 @@
   [[:sprite key texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
     (add-input-callbacks! key sprite properties)
+    (add-event-support! sprite)
+    (set! (.-mySprite js/window) sprite)
     (add-to-stage! sprite key properties)))
 
 (defn- handle-movie-clip
@@ -387,21 +390,27 @@
   (let [mousedown
         (fn [data]
           (set! (.-dragging object) true)
-          (set! (.-originalPosition object) (new-point (.-x (.-position object))
-                                                       (.-y (.-position object))))
+          (set! (.-originalPosition object)
+                (new-point (.-x (.-position object))
+                           (.-y (.-position object))))
           (set! (.-data object) data))
         mouseup
         (fn []
           (set! (.-dragging object) false)
           (set! (.-originalPosition object) nil)
+          (set! (.-firstMovePosition object) nil)
           (set! (.-data object) nil))
         mousemove
         (fn []
           (when (.-dragging object)
-            (let [new-position ((expr-wrap function)
+            (let [local-position (.getLocalPosition (.-data object)
+                                                    (.-parent object))
+                  new-position ((expr-wrap function)
                                 (.-originalPosition object)
-                                (.getLocalPosition (.-data object)
-                                                   (.-parent object)))]
+                                (or (.-firstMovePosition object) local-position)
+                                local-position)]
+              (when-not (.-firstMovePosition object)
+                (set! (.-firstMovePosition object) local-position))
               (set! (.-x (.-position object)) (.-x new-position))
               (set! (.-y (.-position object)) (.-y new-position)))))]
     (set! (.-interactive object) true)
