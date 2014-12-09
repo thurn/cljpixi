@@ -19,10 +19,14 @@
     (doseq [listener ((.-eventListeners object) type)]
       (listener (.-originalEvent interaction-data)))))
 
-(defn add-event-support!
+(defn impersonate-dom-node!
+  "Gives a Pixi Sprite object just enough properties to pretend to be a DOM node
+   so that hammer.js will be able to attach gesture recognizers to it."
   [object]
   (set! (.-interactive object) true)
   (set! (.-eventListeners object) {})
+  (set! (.-ownerDocument object) (.-document js/window))
+  (set! (.-style object) (js* "{}"))
   (set! (.-addEventListener object) add-event-listener)
   (set! (.-removeEventListener object) add-event-listener)
   (set! (.-mousedown object) (event-function object "mousedown"))

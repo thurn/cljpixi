@@ -1,7 +1,7 @@
 (ns tin.core
   (:require
    [tin.ease]
-   [tin.events :refer [add-event-support!]]
+   [tin.events :refer [impersonate-dom-node!]]
    [clojure.set :refer [intersection]]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
                             alts! timeout pub]]
@@ -319,7 +319,7 @@
   [[:sprite key texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
     (add-input-callbacks! key sprite properties)
-    (add-event-support! sprite)
+    (impersonate-dom-node! sprite)
     (set! (.-mySprite js/window) sprite)
     (add-to-stage! sprite key properties)))
 
