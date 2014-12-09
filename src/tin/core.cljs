@@ -593,6 +593,17 @@
   [:timeline options & tweens]
   [:load & filenames] ;; Blocks rendering until loaded.
   [:clear] ;; Remove everything in scene.
+
+  ;; Recognizers
+  ;; Specify a :recognizers list as an option to any DisplayObject.
+  ;; Maps event keys to recognizers. Valid recognizer expressions:
+  [:pan :threshold 10]
+  [:pinch :pointers 2]
+  [:press :time 500]
+  [:rotate :threshold 10]
+  [:swipe :velocity 0.65]
+  [:tap :taps 1]
+  [:hover :time 1000]
   )
 
 (comment ;; Action Format
