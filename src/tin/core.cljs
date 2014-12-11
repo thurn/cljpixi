@@ -259,22 +259,22 @@
 
 (defn- add-recognizer!
   "Adds a single Hammer gesture recognizer to the provided display object."
-  [key manager Constructor [event & {:as options}]]
+  [key manager [event & {:as options}] Constructor]
   (.add manager (Constructor. (clj->js options)))
-  (let [event-name (or (options "event") (name event))]
+  (let [event-name (get options "event" (name event))]
     (.on manager event-name (fn [data]
-                              (put! event-channel {:topic eventname
-                                                   :data data
+                              (put! event-channel {:topic event-name
+                                                   :data (js->clj data)
                                                    :key key})))))
-
 
 (defn- add-recognizers!
   "Adds gesture recognizers to the provided display object."
   [key object properties]
+  (impersonate-dom-node! object)
   (let [Manager (.-Manager js/Hammer)
-        manager (Manager. object)]
-    (impersonate-dom-node! object)
-    (doseq [recognizer (:recognizers properties)]
+        manager (Manager. object)
+        recognizers (:recognizers properties)]
+    (doseq [recognizer recognizers]
       (case (first recognizer)
         :pan
         (add-recognizer! key manager recognizer (.-Pan js/Hammer))
@@ -331,7 +331,7 @@
   "Instantiates a pixi.js MovieClip and adds it to the global stage."
   [[:movie-clip key textures properties]]
   (let [clip (new-movie-clip (clj->js (map handle-message textures)))]
-    (when (:recognizers properties) (add-recognizers! key sprite properties))
+    (when (:recognizers properties) (add-recognizers! key clip properties))
     (add-to-stage! clip key properties)))
 
 (defn- handle-update
@@ -347,7 +347,7 @@
   [[:container name properties & children]]
   (let [container (new-display-object-container)]
     (dorun (map #(.addChild container (handle-message %)) children))
-    (when (:recognizers properties) (add-recognizers! key sprite properties))
+    (when (:recognizers properties) (add-recognizers! key container properties))
     (add-to-stage! container name properties)))
 
 (defn- new-tween
