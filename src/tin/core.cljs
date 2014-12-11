@@ -188,25 +188,10 @@
     :x (.-x object)
     :y (.-x object)))
 
-(def ^:private input-events
+(def ^:private custom-properties
   #{:click :mouse-down :mouse-up :mouse-up-outside :mouse-over :mouse-out
-    :tap :touch-start :touch-end :touch-end-outside :mouse-move :touch-move})
-
-(defn set-input-function!
-  [object event fn]
-  (case event
-    :click (set! (.-click object) fn)
-    :mouse-down (set! (.-mousedown object) fn)
-    :mouse-up (set! (.-mouseup object) fn)
-    :mouse-up-outside (set! (.-mouseupoutside object) fn)
-    :mouse-over (set! (.-mouseover object) fn)
-    :mouse-out (set! (.-mouseout object) fn)
-    :tap (set! (.-tap object) fn)
-    :touch-start (set! (.-touchstart object) fn)
-    :touch-end (set! (.-touchend object) fn)
-    :touch-end-outside (set! (.-touchendoutside object) fn)
-    :mouse-move (set! (.-mousemove object) fn)
-    :touch-move (set! (.-touchmove object) fn)))
+    :tap :touch-start :touch-end :touch-end-outside :mouse-move :touch-move
+    :recognizers})
 
 (defn overwrite
   "Default update function for :update and :tween, overwrites the existing value
@@ -240,7 +225,7 @@
                      ((expr-wrap-first function)
                       (get-property object (key entry))
                       (val entry))))
-    (filter #(not (contains? input-events (key %))) properties))))
+    (filter #(not (contains? custom-properties (key %))) properties))))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -268,23 +253,43 @@
     (when name (swap! display-objects add-object key object))
     object))
 
-(defn- add-input-callbacks!
-  "Add user input callbacks to the provided DisplayObject where they are
-  requested."
+(defn- hover-recognizer
+  "Makes a new gesture recognizer constructor for recognizing hover events."
+  [])
+
+(defn- add-recognizer!
+  "Adds a single Hammer gesture recognizer to the provided display object."
+  [key manager Constructor [event & {:as options}]]
+  (.add manager (Constructor. (clj->js options)))
+  (let [event-name (or (options "event") (name event))]
+    (.on manager event-name (fn [data]
+                              (put! event-channel {:topic eventname
+                                                   :data data
+                                                   :key key})))))
+
+
+(defn- add-recognizers!
+  "Adds gesture recognizers to the provided display object."
   [key object properties]
-  (when-let [events (not-empty (intersection input-events
-                                             (into #{} (keys properties))))]
-    (set! (.-interactive object) true)
-    (doseq [event events]
-      (set-input-function!
-       object event
-       (fn [data]
-         (put! event-channel
-               {:topic (properties event)
-                :key key
-                :data {:target (.-target data)
-                       :global (.-global data)
-                       :original-event (.-originalEvent data)}}))))))
+  (let [Manager (.-Manager js/Hammer)
+        manager (Manager. object)]
+    (impersonate-dom-node! object)
+    (doseq [recognizer (:recognizers properties)]
+      (case (first recognizer)
+        :pan
+        (add-recognizer! key manager recognizer (.-Pan js/Hammer))
+        :pinch
+        (add-recognizer! key manager recognizer (.-Pinch js/Hammer))
+        :press
+        (add-recognizer! key manager recognizer (.-Press js/Hammer))
+        :rotate
+        (add-recognizer! key manager recognizer (.-Rotate js/Hammer))
+        :swipe
+        (add-recognizer! key manager recognizer (.-Swipe js/Hammer))
+        :tap
+        (add-recognizer! key manager recognizer (.-Tap js/Hammer))
+        :hover
+        (add-recognizer! key manager recognizer (hover-recognizer))))))
 
 (defn interaction-local-coordinates
   "Gets the coordinates of an interaction event in the coordinate system of the
@@ -318,8 +323,7 @@
   added as a child of the global stage."
   [[:sprite key texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
-    (add-input-callbacks! key sprite properties)
-    (impersonate-dom-node! sprite)
+    (when (:recognizers properties) (add-recognizers! key sprite properties))
     (set! (.-mySprite js/window) sprite)
     (add-to-stage! sprite key properties)))
 
@@ -327,7 +331,7 @@
   "Instantiates a pixi.js MovieClip and adds it to the global stage."
   [[:movie-clip key textures properties]]
   (let [clip (new-movie-clip (clj->js (map handle-message textures)))]
-    (add-input-callbacks! key clip properties)
+    (when (:recognizers properties) (add-recognizers! key sprite properties))
     (add-to-stage! clip key properties)))
 
 (defn- handle-update
@@ -343,7 +347,7 @@
   [[:container name properties & children]]
   (let [container (new-display-object-container)]
     (dorun (map #(.addChild container (handle-message %)) children))
-    (add-input-callbacks! name container properties)
+    (when (:recognizers properties) (add-recognizers! key sprite properties))
     (add-to-stage! container name properties)))
 
 (defn- new-tween
