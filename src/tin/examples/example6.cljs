@@ -1,7 +1,6 @@
 (ns tin.examples.example6
   (:require
-   [tin.core :refer [events put-messages! interaction-local-coordinates
-                     point-object-binary-function]]
+   [tin.core :refer [events put-messages! local-coordinates]]
    [cljs.core.async :refer [<! >! chan sub put!]])
   (:require-macros [cljs.core.async.macros :refer [go]]))
 
@@ -23,6 +22,9 @@
   (put-messages! render-channel messages)
   (go
     (while true
-      (let [{{x "deltaX" y "deltaY"} :data key :key} (<! pan-channel)]
-        (prn key x y)
-        (>! render-channel [:update key {:position [:point x y]}])))))
+      (let [{{{center-x "x" center-y "y"} "center"} :data
+             transform :transform
+             key :key} (<! pan-channel)
+             coordinates (local-coordinates
+                          [:point center-x center-y] transform)]
+        (>! render-channel [:update key {:position coordinates}])))))

@@ -17,7 +17,9 @@
   [object type]
   (fn [interaction-data]
     (doseq [listener ((.-eventListeners object) type)]
-      (listener (.-originalEvent interaction-data)))))
+      (let [event (.-originalEvent interaction-data)]
+        (set! (.-global event) (.-global interaction-data))
+        (listener event)))))
 
 (defn impersonate-dom-node!
   "Gives a Pixi Sprite object just enough properties to pretend to be a DOM node

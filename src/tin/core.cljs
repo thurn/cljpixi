@@ -257,16 +257,6 @@
   "Makes a new gesture recognizer constructor for recognizing hover events."
   [])
 
-(defn- add-recognizer!
-  "Adds a single Hammer gesture recognizer to the provided display object."
-  [key manager [event & {:as options}] Constructor]
-  (.add manager (Constructor. (clj->js options)))
-  (let [event-name (get options "event" (name event))]
-    (.on manager event-name (fn [data]
-                              (put! event-channel {:topic event-name
-                                                   :data (js->clj data)
-                                                   :key key})))))
-
 (defn- add-recognizers!
   "Adds gesture recognizers to the provided display object."
   [key object properties]
@@ -275,21 +265,40 @@
         manager (Manager. object)
         recognizers (:recognizers properties)]
     (doseq [recognizer recognizers]
-      (case (first recognizer)
-        :pan
-        (add-recognizer! key manager recognizer (.-Pan js/Hammer))
-        :pinch
-        (add-recognizer! key manager recognizer (.-Pinch js/Hammer))
-        :press
-        (add-recognizer! key manager recognizer (.-Press js/Hammer))
-        :rotate
-        (add-recognizer! key manager recognizer (.-Rotate js/Hammer))
-        :swipe
-        (add-recognizer! key manager recognizer (.-Swipe js/Hammer))
-        :tap
-        (add-recognizer! key manager recognizer (.-Tap js/Hammer))
-        :hover
-        (add-recognizer! key manager recognizer (hover-recognizer))))))
+      (let [[event & {:as options}] recognizer
+            Constructor
+            (case (first recognizer)
+              :pan (.-Pan js/Hammer)
+              :pinch (.-Pinch js/Hammer)
+              :press (.-Press js/Hammer)
+              :rotate (.-Rotate js/Hammer)
+              :swipe (.-Swipe js/Hammer)
+              :tap (.-Tap js/Hammer)
+              :hover (hover-recognizer))
+            event-name (get options "event" (name event))
+            callback
+            (fn [data]
+              (put! event-channel {:topic event-name
+                                   :data (js->clj data)
+                                   :key key
+                                   :transform (.-worldTransform (.-parent object))}))]
+        (.add manager (Constructor. (clj->js options)))
+        (.on manager event-name callback)))))
+
+(defn local-coordinates
+  "Transforms a point from global window coordinates into the coordinate system
+   of the provided transform object"
+  [[:point x y] transform]
+  (let [InteractionData (.-InteractionData js/PIXI)
+        tmp-data (InteractionData.)
+        tmp-object (js* "{}")
+        interaction-manager (.-interactionManager @stage)
+        bounds (.getBoundingClientRect (.-interactionDOMElement interaction-manager))
+        global-x (* (- x (.-left bounds)) (/ (.-width (.-target interaction-manager)) (.-width bounds)))
+        global-y (* (- y (.-top bounds)) (/ (.-height (.-target interaction-manager)) (.-height bounds)))]
+    (set! (.-global tmp-data) (expr->value [:point global-x global-y]))
+    (set! (.-worldTransform tmp-object) transform)
+    (value->expr (.getLocalPosition tmp-data tmp-object))))
 
 (defn interaction-local-coordinates
   "Gets the coordinates of an interaction event in the coordinate system of the
@@ -616,5 +625,4 @@
   [:stop-clip :frame frame]
   [:update key properties :function f]
   [:draggable :function f]
-  [:not-draggable]
-  )
+  [:not-draggable])
