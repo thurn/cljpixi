@@ -8,7 +8,7 @@
   [:sprite (str "bunny" i)
    [:texture [:image "resources/example6/bunny.png"]]
    {:anchor [:point 0.5 0.5] :scale [:point 3.0 3.0] :position [:point x y]
-    :recognizers [[:pan]]}])
+    :events [[:pan]]}])
 
 (def pan-channel (chan))
 (sub events "pan" pan-channel)

@@ -12,4 +12,4 @@
   (let [{view :view render-channel :render input-channel :input}
         (initialize :width 800 :height 600 :background-color 0x0)]
     (.appendChild (.-body js/document) view)
-    (example6 render-channel input-channel)))
+    (example5 render-channel input-channel)))

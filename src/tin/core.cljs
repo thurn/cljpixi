@@ -191,7 +191,7 @@
 (def ^:private custom-properties
   #{:click :mouse-down :mouse-up :mouse-up-outside :mouse-over :mouse-out
     :tap :touch-start :touch-end :touch-end-outside :mouse-move :touch-move
-    :recognizers})
+    :events})
 
 (defn overwrite
   "Default update function for :update and :tween, overwrites the existing value
@@ -257,45 +257,62 @@
   "Makes a new gesture recognizer constructor for recognizing hover events."
   [])
 
-(defn- add-recognizers!
-  "Adds gesture recognizers to the provided display object."
+(defn- add-event-handlers!
+  "Adds event handlers to the provided display object."
   [key object properties]
   (impersonate-dom-node! object)
   (let [Manager (.-Manager js/Hammer)
         manager (Manager. object)
-        recognizers (:recognizers properties)]
-    (doseq [recognizer recognizers]
+        events (:events properties)]
+    (doseq [recognizer events]
       (let [[event & {:as options}] recognizer
-            Constructor
-            (case (first recognizer)
-              :pan (.-Pan js/Hammer)
-              :pinch (.-Pinch js/Hammer)
-              :press (.-Press js/Hammer)
-              :rotate (.-Rotate js/Hammer)
-              :swipe (.-Swipe js/Hammer)
-              :tap (.-Tap js/Hammer)
-              :hover (hover-recognizer))
+            Constructor (case (first recognizer)
+                          :pan (.-Pan js/Hammer)
+                          :pinch (.-Pinch js/Hammer)
+                          :press (.-Press js/Hammer)
+                          :rotate (.-Rotate js/Hammer)
+                          :swipe (.-Swipe js/Hammer)
+                          :tap (.-Tap js/Hammer)
+                          nil)
             event-name (get options "event" (name event))
-            callback
-            (fn [data]
-              (put! event-channel {:topic event-name
-                                   :data (js->clj data)
-                                   :key key
-                                   :transform (.-worldTransform (.-parent object))}))]
-        (.add manager (Constructor. (clj->js options)))
-        (.on manager event-name callback)))))
+            callback (fn [data]
+                       (put! event-channel
+                             {:topic event-name
+                              :data (js->clj data)
+                              :key key
+                              :transform (.-worldTransform
+                                          (.-parent object))}))]
+        (if Constructor
+          (do (.add manager (Constructor. (clj->js options)))
+              (.on manager event-name callback))
+          (case (first recognizer)
+            :mouse-over (set! (.-mouseover object) callback)
+            :mouse-out (set! (.-mouseout object) callback)
+            :click-start (do (set! (.-mousedown object) callback)
+                             (set! (.-touchstart object) callback))
+            :click-end-outside (do (set! (.-mouseupoutside object) callback)
+                                   (set! (.-touchendoutside object) callback))
+            :click-end (do (set! (.-mouseup object) callback)
+                           (set! (.-touchend object) callback)
+                           (set! (.-mouseupoutside object) callback)
+                           (set! (.-touchendoutside object) callback))))))))
 
 (defn local-coordinates
   "Transforms a point from global window coordinates into the coordinate system
-   of the provided transform object"
+  of the provided transform object"
   [[:point x y] transform]
   (let [InteractionData (.-InteractionData js/PIXI)
         tmp-data (InteractionData.)
         tmp-object (js* "{}")
         interaction-manager (.-interactionManager @stage)
-        bounds (.getBoundingClientRect (.-interactionDOMElement interaction-manager))
-        global-x (* (- x (.-left bounds)) (/ (.-width (.-target interaction-manager)) (.-width bounds)))
-        global-y (* (- y (.-top bounds)) (/ (.-height (.-target interaction-manager)) (.-height bounds)))]
+        bounds (.getBoundingClientRect
+                (.-interactionDOMElement interaction-manager))
+        global-x (* (- x (.-left bounds))
+                    (/ (.-width (.-target interaction-manager))
+                       (.-width bounds)))
+        global-y (* (- y (.-top bounds))
+                    (/ (.-height (.-target interaction-manager))
+                       (.-height bounds)))]
     (set! (.-global tmp-data) (expr->value [:point global-x global-y]))
     (set! (.-worldTransform tmp-object) transform)
     (value->expr (.getLocalPosition tmp-data tmp-object))))
@@ -332,7 +349,7 @@
   added as a child of the global stage."
   [[:sprite key texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
-    (when (:recognizers properties) (add-recognizers! key sprite properties))
+    (when (:events properties) (add-event-handlers! key sprite properties))
     (set! (.-mySprite js/window) sprite)
     (add-to-stage! sprite key properties)))
 
@@ -340,7 +357,7 @@
   "Instantiates a pixi.js MovieClip and adds it to the global stage."
   [[:movie-clip key textures properties]]
   (let [clip (new-movie-clip (clj->js (map handle-message textures)))]
-    (when (:recognizers properties) (add-recognizers! key clip properties))
+    (when (:events properties) (add-event-handlers! key clip properties))
     (add-to-stage! clip key properties)))
 
 (defn- handle-update
@@ -356,7 +373,7 @@
   [[:container name properties & children]]
   (let [container (new-display-object-container)]
     (dorun (map #(.addChild container (handle-message %)) children))
-    (when (:recognizers properties) (add-recognizers! key container properties))
+    (when (:events properties) (add-event-handlers! key container properties))
     (add-to-stage! container name properties)))
 
 (defn- new-tween
@@ -397,45 +414,6 @@
       (.to (new-tween object tween-options)
            (clj->js {property target}) duration ease))))
 
-(defn- handle-draggable
-  "Handles marking an object with :draggable."
-  [object options [:draggable & {:keys [function] :or {function overwrite}}]]
-  (let [mousedown
-        (fn [data]
-          (set! (.-dragging object) true)
-          (set! (.-originalPosition object)
-                (new-point (.-x (.-position object))
-                           (.-y (.-position object))))
-          (set! (.-data object) data))
-        mouseup
-        (fn []
-          (set! (.-dragging object) false)
-          (set! (.-originalPosition object) nil)
-          (set! (.-firstMovePosition object) nil)
-          (set! (.-data object) nil))
-        mousemove
-        (fn []
-          (when (.-dragging object)
-            (let [local-position (.getLocalPosition (.-data object)
-                                                    (.-parent object))
-                  new-position ((expr-wrap function)
-                                (.-originalPosition object)
-                                (or (.-firstMovePosition object) local-position)
-                                local-position)]
-              (when-not (.-firstMovePosition object)
-                (set! (.-firstMovePosition object) local-position))
-              (set! (.-x (.-position object)) (.-x new-position))
-              (set! (.-y (.-position object)) (.-y new-position)))))]
-    (set! (.-interactive object) true)
-    (set! (.-mousedown object) mousedown)
-    (set! (.-touchstart object) mousedown)
-    (set! (.-mouseup object) mouseup)
-    (set! (.-mouseupoutside object) mouseup)
-    (set! (.-touchend object) mouseup)
-    (set! (.-touchendoutside object) mouseup)
-    (set! (.-mousemove object) mousemove)
-    (set! (.-touchmove object) mousemove)))
-
 (defn- handle-animation-action
   "Applies a TweenJS action to the provided tween."
   [object options action]
@@ -447,9 +425,7 @@
       (if frame (.gotoAndPlay object frame) (.play object)))
     :stop-clip
     (let [[:stop-clip frame] action]
-      (if frame (.gotoAndStop object frame) (.stop object)))
-    :draggable
-    (handle-draggable object options action)))
+      (if frame (.gotoAndStop object frame) (.stop object)))))
 
 (defn- handle-animation
   "Creates a new TweenJS Tween object for each object with the provided key and
@@ -607,9 +583,9 @@
   [:load & filenames] ;; Blocks rendering until loaded.
   [:clear] ;; Remove everything in scene.
 
-  ;; Recognizers
-  ;; Specify a :recognizers list as an option to any DisplayObject.
-  ;; Maps event keys to recognizers. Valid recognizer expressions:
+  ;; Events
+  ;; Specify a :events list as an option to any DisplayObject.
+  ;; Maps event keys to events. Valid recognizer expressions:
   [:pan :threshold 10]
   [:pinch :pointers 2]
   [:press :time 500]

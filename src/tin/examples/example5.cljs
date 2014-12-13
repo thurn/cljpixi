@@ -7,8 +7,7 @@
 (defn button [i x y]
   [:sprite (str "button" i) [:texture [:image "resources/example5/button.png"]]
    {:button-mode? true, :anchor [:point 0.5 0.5], :position [:point x y],
-    :mouse-down "button-mouse-down" :mouse-up "button-mouse-up"
-    :mouse-over "button-mouse-over" :mouse-out "button-mouse-out"}])
+    :events [[:mouse-over] [:mouse-out] [:click-start] [:click-end]]}])
 
 (def messages [(button 1 400 100) (button 2 400 300) (button 3 400 500)])
 
@@ -16,14 +15,14 @@
   [:update key
    {:texture [:texture [:image (str "resources/example5/" name ".png")]]}])
 
-(def mouse-down-channel (chan))
-(sub events "button-mouse-down" mouse-down-channel)
-(def mouse-up-channel (chan))
-(sub events "button-mouse-up" mouse-up-channel)
+(def click-start-channel (chan))
+(sub events "click-start" click-start-channel)
+(def click-end-channel (chan))
+(sub events "click-end" click-end-channel)
 (def mouse-over-channel (chan))
-(sub events "button-mouse-over" mouse-over-channel)
+(sub events "mouse-over" mouse-over-channel)
 (def mouse-out-channel (chan))
-(sub events "button-mouse-out" mouse-out-channel)
+(sub events "mouse-out" mouse-out-channel)
 
 (defn dir [obj]
   (js* "console.dir(obj);"))
@@ -33,9 +32,9 @@
   (go
     (while true
       (alt!
-        mouse-down-channel
+        click-start-channel
         ([{key :key}] (>! render-channel (set-texture key "buttonDown")))
-        mouse-up-channel
+        click-end-channel
         ([{key :key}] (>! render-channel (set-texture key "buttonOver")))
         mouse-over-channel
         ([{key :key}] (>! render-channel (set-texture key "buttonOver")))
