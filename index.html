@@ -9,6 +9,12 @@
         background-color: #000000;
         color: #ffffff;
       }
+
+      a {
+        color: #3dbbd2;
+        font-size: 1.5em;
+        margin-right: 0.5em;
+      }
     </style>
     <script>
       SCRIPT_COUNT = 4;
@@ -20,7 +26,11 @@
     </script>
   </head>
   <body>
-    <h1>whitespace-only</h1>
+    <p>
+      <a href="#example1">Example 1</a> <a href="#example2">Example 2</a>
+      <a href="#example3">Example 3</a> <a href="#example4">Example 4</a>
+      <a href="#example5">Example 5</a> <a href="#example6">Example 6</a>
+    </p>
     <script async onload="scriptLoaded()" src="resources/js/pixi.js"></script>
     <script async onload="scriptLoaded()" src="resources/js/tweenjs-0.5.1.min.js"></script>
     <script async onload="scriptLoaded()" src="resources/js/hammer.js"></script>

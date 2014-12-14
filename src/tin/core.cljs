@@ -434,6 +434,13 @@
   (doseq [object (@display-objects key ()) action actions]
     (handle-animation-action object tween-options action)))
 
+(defn- handle-clear
+  "Clears all values from the stage."
+  [[:clear]]
+  (while (> (.-length (.-children @stage)) 0)
+    (.removeChild @stage (aget (.-children @stage) 0)))
+  nil)
+
 ;; TODO: Child objects of e.g. a display container are being added to the global
 ;; stage as well as to their parent.
 
@@ -470,7 +477,8 @@
       :movie-clip (handle-movie-clip message)
       :update (handle-update message)
       :container (handle-container message)
-      :animation (handle-animation message))
+      :animation (handle-animation message)
+      :clear (handle-clear message))
     message))
 
 (defn- load-assets
