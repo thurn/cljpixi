@@ -346,11 +346,18 @@
 
 (defn- handle-sprite
   "Instantiates and returns a new pixi.js Sprite, which is also immediately
-  added as a child of the global stage."
+   added as a child of the global stage."
   [[:sprite key texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
     (when (:events properties) (add-event-handlers! key sprite properties))
-    (set! (.-mySprite js/window) sprite)
+    (add-to-stage! sprite key properties)))
+
+(defn- handle-tiling-sprite
+  "Instantiates and returns a new pixi.js TilingSprite, which is also
+   immediately added as a child of the global stage."
+  [[:sprite key texture width height properties]]
+  (let [sprite (new-tiling-sprite (handle-message texture) width height)]
+    (when (:events properties) (add-event-handlers! key sprite properties))
     (add-to-stage! sprite key properties)))
 
 (defn- handle-movie-clip
@@ -369,7 +376,7 @@
 
 (defn- handle-container
   "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
-  also be added as a child of the global stage."
+   also be added as a child of the global stage."
   [[:container name properties & children]]
   (let [container (new-display-object-container)]
     (dorun (map #(.addChild container (handle-message %)) children))
@@ -439,7 +446,7 @@
   [[:clear]]
   (while (> (.-length (.-children @stage)) 0)
     (.removeChild @stage (aget (.-children @stage) 0)))
-  nil)
+  (reset! display-objects {}))
 
 ;; TODO: Child objects of e.g. a display container are being added to the global
 ;; stage as well as to their parent.
@@ -474,6 +481,7 @@
       :point (handle-point message)
       :texture (handle-texture message)
       :sprite (handle-sprite message)
+      :tiling-sprite (handle-tiling-sprite message)
       :movie-clip (handle-movie-clip message)
       :update (handle-update message)
       :container (handle-container message)
@@ -524,32 +532,6 @@
   [render-channel messages]
   (dorun (map #(put! render-channel %) messages)))
 
-(defn- rand-between
-  "Returns a random number between low (inclusive) and high (exclusive)."
-  [low high]
-  (+ low (rand-int (- high low))))
-
-;; Todo: Don't require having *each* movie clip have a separate vector of
-;; textures, let users have a collection of textures under a key
-(defn example3 [render-channel input-channel]
-  (let [make-texture
-        (fn [i] [:texture [:frame (str "Explosion_Sequence_A " i ".png")]])
-        make-movie-clip
-        (fn [i]
-          (let [scale (rand-between 0.75 1.5)]
-            [:movie-clip (str "explosion" i) (map make-texture (range 1 27))
-             {:position [:point (rand-int 800) (rand-int 600)]
-              :rotation (rand-int Math/PI) :anchor [:point 0.5 0.5]
-              :scale [:point scale scale] :loop true}]))
-        make-animation
-        (fn [i]
-          [:animation (str "explosion" i) {} [:play-clip (rand-between 1 27)]])
-        messages
-        [[:load "resources/example3/SpriteSheet.json"]
-         (into [:messages] (map make-movie-clip (range 50)))
-         (into [:messages] (map make-animation (range 50)))]]
-    (dorun (map #(put! render-channel %) messages))))
-
 ;; Todo: support from-frames helper function constructors for sprites & clips
 
 ;; Todo: convert from clojure property names to javascript camelcase names
@@ -568,16 +550,22 @@
   [:sprite key texture options]
   [:movie-clip key [textures] options]
   [:update key properties :function function]
-  ;; update-fn is the same as the function you pass to :tween
+  ;; function is the same as the function you pass to :tween
   [:point x y]
   [:texture texture-expression]
-  ;; Valid Texture expressions:
+  [:animation key options & actions] ;; TODO rename this to :action
+  [:tiling-sprite key texture width height options]
+  [:clear] ;; Remove everything in scene.
+  [:load & filenames] ;; Blocks rendering until loaded.
+
+
+  ;; Texture expressions:
   [:image "path.png"]
   [:canvas canvas-object]
   [:frame frame-id]
-  ;; TODO rename this to :action
-  [:animation key options & actions]
-  ;; Valid Actions:
+
+
+  ;; Actions:
   [:tween property value {:function f :duration d :ease e}]
   ;; Value can be a number or {:x :y} map for PIXI.Point properties
   ;; Function takes 2 args - previous and value, and should return the
@@ -587,11 +575,9 @@
   ;; looping tweens are always between two fixed values.
   [:play-clip frame?]
   [:stop-clip frame?]
-  [:timeline options & tweens]
-  [:load & filenames] ;; Blocks rendering until loaded.
-  [:clear] ;; Remove everything in scene.
 
-  ;; Events
+
+  ;; Events:
   ;; Specify a :events list as an option to any DisplayObject.
   ;; Maps event keys to events. Valid recognizer expressions:
   [:pan :threshold 10]
@@ -600,7 +586,11 @@
   [:rotate :threshold 10]
   [:swipe :velocity 0.65]
   [:tap :taps 1]
-  [:hover :time 1000]
+  [:mouse-over]
+  [:mouse-out]
+  [:click-start]
+  [:click-end]
+  [:click-end-outside]
   )
 
 (comment ;; Action Format

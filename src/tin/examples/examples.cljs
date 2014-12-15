@@ -7,6 +7,7 @@
    [tin.examples.example4 :refer [example4]]
    [tin.examples.example5 :refer [example5]]
    [tin.examples.example6 :refer [example6]]
+   [tin.examples.example7 :refer [example7]]
    [cljs.core.async :refer [put!]]))
 
 (defn ^:export main []
@@ -26,6 +27,8 @@
                            "#example5" (example5 render-channel
                                                  input-channel)
                            "#example6" (example6 render-channel
+                                                 input-channel)
+                           "#example7" (example7 render-channel
                                                  input-channel)))]
     (.appendChild (.-body js/document) view)
     (set! (.-onhashchange js/window) change-example)
