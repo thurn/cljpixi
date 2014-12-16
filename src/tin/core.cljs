@@ -346,7 +346,7 @@
 
 (defn- handle-sprite
   "Instantiates and returns a new pixi.js Sprite, which is also immediately
-   added as a child of the global stage."
+  added as a child of the global stage."
   [[:sprite key texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
     (when (:events properties) (add-event-handlers! key sprite properties))
@@ -354,7 +354,7 @@
 
 (defn- handle-tiling-sprite
   "Instantiates and returns a new pixi.js TilingSprite, which is also
-   immediately added as a child of the global stage."
+  immediately added as a child of the global stage."
   [[:sprite key texture width height properties]]
   (let [sprite (new-tiling-sprite (handle-message texture) width height)]
     (when (:events properties) (add-event-handlers! key sprite properties))
@@ -376,7 +376,7 @@
 
 (defn- handle-container
   "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
-   also be added as a child of the global stage."
+  also be added as a child of the global stage."
   [[:container name properties & children]]
   (let [container (new-display-object-container)]
     (dorun (map #(.addChild container (handle-message %)) children))
@@ -399,12 +399,10 @@
 
 (defn point-binary-function
   "Takes a binary function and returns a function which will apply it to
-  old-point, a pixi.js point object and new-point, an {:x :y} formatted map, and
-  return an {:x :y} map of the result."
+  two [:point x y] expressions and return a new [:point]."
   [binary-function]
-  (fn [old-point new-point]
-    {:x (binary-function (.-x old-point) (:x new-point))
-     :y (binary-function (.-y old-point) (:y new-point))}))
+  (fn [[:point old-x old-y] [:point new-x new-y]]
+    [:point (binary-function old-x new-x) (binary-function old-y new-y)]))
 
 (defn- handle-tween-action
   "Handles the :tween action"
@@ -415,11 +413,15 @@
                                  function overwrite}}]]
   (let [current-value (js->clj (get-property object property))
         target ((expr-wrap-first function) current-value value)]
-    (if (map? value)
-      (.to (new-tween current-value tween-options)
-           (clj->js target) duration ease)
-      (.to (new-tween object tween-options)
-           (clj->js {property target}) duration ease))))
+    (match value
+      [:point x y] (.to (new-tween current-value tween-options)
+                        (clj->js {:x x :y y})
+                        duration
+                        ease)
+      :else (.to (new-tween object tween-
+                 (clj->js {property target})
+                 duration
+                 ease)))))
 
 (defn- handle-animation-action
   "Applies a TweenJS action to the provided tween."
