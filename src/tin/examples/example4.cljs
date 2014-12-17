@@ -16,8 +16,9 @@
   (let [random-angle (* (rand) Math/PI 2)]
     [:animation (str "ball" i) {:loop true}
      [:tween :position
-      {:x (+ 400 (* 500 (Math/cos random-angle)))
-       :y (+ 300 (* 500 (Math/sin random-angle)))}
+      [:point
+       (+ 400 (* 500 (Math/cos random-angle)))
+       (+ 300 (* 500 (Math/sin random-angle)))]
       :duration (rand-between 2000 4000)]]))
 
 (def messages

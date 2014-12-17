@@ -418,10 +418,10 @@
                         (clj->js {:x x :y y})
                         duration
                         ease)
-      :else (.to (new-tween object tween-
+      :else (.to (new-tween object tween-options)
                  (clj->js {property target})
                  duration
-                 ease)))))
+                 ease))))
 
 (defn- handle-animation-action
   "Applies a TweenJS action to the provided tween."
