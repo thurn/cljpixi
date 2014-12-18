@@ -67,6 +67,10 @@
   (let [Text (.-Text js/PIXI)]
     (Text. text style)))
 
+(defn- new-bitmap-text [text style]
+  (let [BitmapText (.-BitmapText js/PIXI)]
+    (BitmapText. text style)))
+
 (defn- new-tiling-sprite [texture width height]
   (let [TilingSprite (.-TilingSprite js/PIXI)]
     (TilingSprite. texture width height)))
@@ -188,10 +192,12 @@
     :x (.-x object)
     :y (.-x object)))
 
-(def ^:private custom-properties
-  #{:click :mouse-down :mouse-up :mouse-up-outside :mouse-over :mouse-out
-    :tap :touch-start :touch-end :touch-end-outside :mouse-move :touch-move
-    :events})
+(def ^:private custom-properties #{:events})
+
+(defn- without-custom-properties
+  "Removes all properties defined in custom-properties from the provided map."
+  [properties]
+  (filter #(not (contains? custom-properties (key %))) properties))
 
 (defn overwrite
   "Default update function for :update and :tween, overwrites the existing value
@@ -225,7 +231,7 @@
                      ((expr-wrap-first function)
                       (get-property object (key entry))
                       (val entry))))
-    (filter #(not (contains? custom-properties (key %))) properties))))
+    (without-custom-properties properties))))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -248,9 +254,8 @@
   from the provided properties map on the object. Returns object."
   [object key properties]
   (letfn [(add-object [objects key value] (update-in objects [key] conj value))]
-    (set-properties! object properties)
     (.addChild @stage object)
-    (when name (swap! display-objects add-object key object))
+    (when key (swap! display-objects add-object key object))
     object))
 
 (defn- hover-recognizer
@@ -350,6 +355,7 @@
   [[:sprite key texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
     (when (:events properties) (add-event-handlers! key sprite properties))
+    (set-properties! sprite properties)
     (add-to-stage! sprite key properties)))
 
 (defn- handle-tiling-sprite
@@ -358,13 +364,24 @@
   [[:sprite key texture width height properties]]
   (let [sprite (new-tiling-sprite (handle-message texture) width height)]
     (when (:events properties) (add-event-handlers! key sprite properties))
+    (set-properties! sprite properties)
     (add-to-stage! sprite key properties)))
+
+(defn- handle-text
+  "Instantiates and returns a new pixi.js Text object, which is also immediately
+  added as a child of the global stage."
+  [new-text-fn [_ key message properties]]
+  (let [text (new-text-fn message
+                          (clj->js (without-custom-properties properties)))]
+    (when (:events properties) (add-event-handlers! key text properties))
+    (add-to-stage! text key properties)))
 
 (defn- handle-movie-clip
   "Instantiates a pixi.js MovieClip and adds it to the global stage."
   [[:movie-clip key textures properties]]
   (let [clip (new-movie-clip (clj->js (map handle-message textures)))]
     (when (:events properties) (add-event-handlers! key clip properties))
+    (set-properties! clip properties)
     (add-to-stage! clip key properties)))
 
 (defn- handle-update
@@ -381,6 +398,7 @@
   (let [container (new-display-object-container)]
     (dorun (map #(.addChild container (handle-message %)) children))
     (when (:events properties) (add-event-handlers! key container properties))
+    (set-properties! container properties)
     (add-to-stage! container name properties)))
 
 (defn- new-tween
@@ -414,14 +432,14 @@
   (let [current-value (js->clj (get-property object property))
         target ((expr-wrap-first function) current-value value)]
     (match value
-      [:point x y] (.to (new-tween current-value tween-options)
-                        (clj->js {:x x :y y})
-                        duration
-                        ease)
-      :else (.to (new-tween object tween-options)
-                 (clj->js {property target})
-                 duration
-                 ease))))
+           [:point x y] (.to (new-tween current-value tween-options)
+                             (clj->js {:x x :y y})
+                             duration
+                             ease)
+           :else (.to (new-tween object tween-options)
+                      (clj->js {property target})
+                      duration
+                      ease))))
 
 (defn- handle-animation-action
   "Applies a TweenJS action to the provided tween."
@@ -488,6 +506,8 @@
       :update (handle-update message)
       :container (handle-container message)
       :animation (handle-animation message)
+      :text (handle-text new-text message)
+      :bitmap-text (handle-text new-bitmap-text message)
       :clear (handle-clear message))
     message))
 
@@ -559,6 +579,8 @@
   [:tiling-sprite key texture width height options]
   [:clear] ;; Remove everything in scene.
   [:load & filenames] ;; Blocks rendering until loaded.
+  [:text key message options]
+  [:bitmap-text key message options]
 
 
   ;; Texture expressions:
