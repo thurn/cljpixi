@@ -11,8 +11,8 @@
 
 (def messages [(button 1 400 100) (button 2 400 300) (button 3 400 500)])
 
-(defn set-texture [key name]
-  [:update key
+(defn set-texture [identifier name]
+  [:update identifier
    {:texture [:texture [:image (str "resources/example5/" name ".png")]]}])
 
 (def click-start-channel (chan))
@@ -33,10 +33,14 @@
     (while true
       (alt!
         click-start-channel
-        ([{key :key}] (>! render-channel (set-texture key "buttonDown")))
+        ([{identifier :identifier}] (>! render-channel
+                                        (set-texture identifier "buttonDown")))
         click-end-channel
-        ([{key :key}] (>! render-channel (set-texture key "buttonOver")))
+        ([{identifier :identifier}] (>! render-channel
+                                        (set-texture identifier "buttonOver")))
         mouse-over-channel
-        ([{key :key}] (>! render-channel (set-texture key "buttonOver")))
+        ([{identifier :identifier}] (>! render-channel
+                                        (set-texture identifier "buttonOver")))
         mouse-out-channel
-        ([{key :key}] (>! render-channel (set-texture key "button")))))))
+        ([{identifier :identifier}] (>! render-channel
+                                        (set-texture identifier "button")))))))

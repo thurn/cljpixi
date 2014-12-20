@@ -2,7 +2,7 @@
   (:require
    [tin.ease]
    [tin.events :refer [impersonate-dom-node!]]
-   [clojure.set :refer [intersection]]
+   [clojure.set :refer [union]]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
                             alts! timeout pub]]
    [cljs.core.match])
@@ -22,8 +22,8 @@
   (atom nil))
 
 (def ^:private display-objects
-  "A map from keys to seqs of pixi DisplayObjects which have been added to
-  the stage as children."
+  "A map from identifiers to seqs of pixi DisplayObjects which have been added
+  to the stage as children."
   (atom {}))
 
 (def ^:private channel-buffer-size 65536)
@@ -33,10 +33,10 @@
   (chan channel-buffer-size))
 
 (def events
-  "A publication for user input events. You can specify an input key for a
-  specific type of user event on a display object, and that key will be used as
-  the topic of a message which will be published here when that user input
-  occurs."
+  "A publication for user input events. You can specify an input identifier for
+  a specific type of user event on a display object, and that identifier will be
+  used as the topic of a message which will be published here when that user
+  input occurs."
   (pub event-channel :topic))
 
 (defn- new-point [x y]
@@ -194,10 +194,17 @@
 
 (def ^:private custom-properties #{:events})
 
-(defn- without-custom-properties
-  "Removes all properties defined in custom-properties from the provided map."
+(def ^:private style-properties #{:font :fill :align :stroke :stroke-thickness
+                                  :word-wrap :word-wrap-width :drop-shadow
+                                  :drop-shadow-color :drop-shadow-angle
+                                  :drop-shadow-distance})
+
+(defn- standard-properties
+  "Removes all properties defined in custom-properties and style-properties from
+  the provided map."
   [properties]
-  (filter #(not (contains? custom-properties (key %))) properties))
+  (let [to-remove (union custom-properties style-properties)]
+    (filter (comp not to-remove key) properties)))
 
 (defn overwrite
   "Default update function for :update and :tween, overwrites the existing value
@@ -231,7 +238,7 @@
                      ((expr-wrap-first function)
                       (get-property object (key entry))
                       (val entry))))
-    (without-custom-properties properties))))
+    (standard-properties properties))))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -249,13 +256,14 @@
   (reset! last-timestamp timestamp))
 
 (defn- add-to-stage!
-  "Adds a new child to the global Stage object, and stores the key for
+  "Adds a new child to the global Stage object, and stores the identifier for
   the object in the global display-objects map. Sets the properties
   from the provided properties map on the object. Returns object."
-  [object key properties]
-  (letfn [(add-object [objects key value] (update-in objects [key] conj value))]
+  [object identifier properties]
+  (letfn [(add-object [objects identifier value]
+            (update-in objects [identifier] conj value))]
     (.addChild @stage object)
-    (when key (swap! display-objects add-object key object))
+    (when identifier (swap! display-objects add-object identifier object))
     object))
 
 (defn- hover-recognizer
@@ -264,7 +272,7 @@
 
 (defn- add-event-handlers!
   "Adds event handlers to the provided display object."
-  [key object properties]
+  [identifier object properties]
   (impersonate-dom-node! object)
   (let [Manager (.-Manager js/Hammer)
         manager (Manager. object)
@@ -284,7 +292,7 @@
                        (put! event-channel
                              {:topic event-name
                               :data (js->clj data)
-                              :key key
+                              :identifier identifier
                               :transform (.-worldTransform
                                           (.-parent object))}))]
         (if Constructor
@@ -352,52 +360,56 @@
 (defn- handle-sprite
   "Instantiates and returns a new pixi.js Sprite, which is also immediately
   added as a child of the global stage."
-  [[:sprite key texture properties]]
+  [[:sprite identifier texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
-    (when (:events properties) (add-event-handlers! key sprite properties))
+    (when (:events properties)
+      (add-event-handlers! identifier sprite properties))
     (set-properties! sprite properties)
-    (add-to-stage! sprite key properties)))
+    (add-to-stage! sprite identifier properties)))
 
 (defn- handle-tiling-sprite
   "Instantiates and returns a new pixi.js TilingSprite, which is also
   immediately added as a child of the global stage."
-  [[:sprite key texture width height properties]]
+  [[:sprite identifier texture width height properties]]
   (let [sprite (new-tiling-sprite (handle-message texture) width height)]
-    (when (:events properties) (add-event-handlers! key sprite properties))
+    (when (:events properties)
+      (add-event-handlers! identifier sprite properties))
     (set-properties! sprite properties)
-    (add-to-stage! sprite key properties)))
+    (add-to-stage! sprite identifier properties)))
 
 (defn- handle-text
   "Instantiates and returns a new pixi.js Text object, which is also immediately
   added as a child of the global stage."
-  [new-text-fn [_ key message properties]]
-  (let [text (new-text-fn message
-                          (clj->js (without-custom-properties properties)))]
-    (when (:events properties) (add-event-handlers! key text properties))
-    (add-to-stage! text key properties)))
+  [new-text-fn [_ identifier message properties]]
+  (let [style-properties (filter (comp style-properties key) properties)
+        text (new-text-fn message (clj->js style-properties))]
+    (when (:events properties) (add-event-handlers! identifier text properties))
+    (add-to-stage! text identifier properties)))
 
 (defn- handle-movie-clip
   "Instantiates a pixi.js MovieClip and adds it to the global stage."
-  [[:movie-clip key textures properties]]
+  [[:movie-clip identifier textures properties]]
   (let [clip (new-movie-clip (clj->js (map handle-message textures)))]
-    (when (:events properties) (add-event-handlers! key clip properties))
+    (when (:events properties) (add-event-handlers! identifier clip properties))
     (set-properties! clip properties)
-    (add-to-stage! clip key properties)))
+    (add-to-stage! clip identifier properties)))
 
 (defn- handle-update
   "Updates the properties of an existing DisplayObject. Cannot be used to set
   user input functions."
-  [[:update key properties & {:keys [function] :or {function overwrite}}]]
-  (doseq [object (@display-objects key)]
+  [[:update identifier properties & {:keys [function]
+                                     :or {function overwrite}}]]
+  (doseq [object (@display-objects identifier)]
     (set-properties! object properties :function function)))
 
 (defn- handle-container
   "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
   also be added as a child of the global stage."
-  [[:container name properties & children]]
+  [[:container identifier properties & children]]
   (let [container (new-display-object-container)]
     (dorun (map #(.addChild container (handle-message %)) children))
-    (when (:events properties) (add-event-handlers! key container properties))
+    (when (:events properties)
+      (add-event-handlers! identifier container properties))
     (set-properties! container properties)
     (add-to-stage! container name properties)))
 
@@ -455,10 +467,10 @@
       (if frame (.gotoAndStop object frame) (.stop object)))))
 
 (defn- handle-animation
-  "Creates a new TweenJS Tween object for each object with the provided key and
-  starts it with the supplied actions."
-  [[:animation key tween-options & actions]]
-  (doseq [object (@display-objects key ()) action actions]
+  "Creates a new TweenJS Tween object for each object with the provided
+  identifier and starts it with the supplied actions."
+  [[:animation identifier tween-options & actions]]
+  (doseq [object (@display-objects identifier ()) action actions]
     (handle-animation-action object tween-options action)))
 
 (defn- handle-clear
@@ -568,19 +580,19 @@
 
 (comment ;; Message Format
   [:messages & messages]
-  [:container key options & children]
-  [:sprite key texture options]
-  [:movie-clip key [textures] options]
-  [:update key properties :function function]
+  [:container identifier options & children]
+  [:sprite identifier texture options]
+  [:movie-clip identifier [textures] options]
+  [:update identifier properties :function function]
   ;; function is the same as the function you pass to :tween
   [:point x y]
   [:texture texture-expression]
-  [:animation key options & actions] ;; TODO rename this to :action
-  [:tiling-sprite key texture width height options]
+  [:animation identifier options & actions] ;; TODO rename this to :action
+  [:tiling-sprite identifier texture width height options]
   [:clear] ;; Remove everything in scene.
   [:load & filenames] ;; Blocks rendering until loaded.
-  [:text key message options]
-  [:bitmap-text key message options]
+  [:text identifier message options]
+  [:bitmap-text identifier message options]
 
 
   ;; Texture expressions:
@@ -603,7 +615,7 @@
 
   ;; Events:
   ;; Specify a :events list as an option to any DisplayObject.
-  ;; Maps event keys to events. Valid recognizer expressions:
+  ;; Maps event identifiers to events. Valid recognizer expressions:
   [:pan :threshold 10]
   [:pinch :pointers 2]
   [:press :time 500]
@@ -621,6 +633,6 @@
   [:tween property value :function f :duration d :ease e]
   [:play-clip :frame frame]
   [:stop-clip :frame frame]
-  [:update key properties :function f]
+  [:update identifier properties :function f]
   [:draggable :function f]
   [:not-draggable])
