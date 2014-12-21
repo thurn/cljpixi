@@ -114,6 +114,7 @@
   does not ensure the object is of the correct type."
   [object key value]
   (case key
+    :align (set! (.-align object) value)
     :alpha (set! (.-alpha object) value)
     :anchor (set! (.-anchor object) value)
     :animation-speed (set! (.-animationSpeed object) value)
@@ -122,8 +123,14 @@
     :canvas (set! (.-canvas object) value)
     :context (set! (.-context object) value)
     :default-cursor (set! (.-defaultCursor object) value)
+    :drop-shadow (set! (.-dropShadow object) value)
+    :drop-shadow-angle (set! (.-dropShadowAngle object) value)
+    :drop-shadow-color (set! (.-dropShadowColor object) value)
+    :drop-shadow-distance (set! (.-dropShadowDistance object) value)
+    :fill (set! (.-fill object) value)
     :filter-area (set! (.-filterArea object) value)
     :filters (set! (.-filters object) value)
+    :font (set! (.-font object) value)
     :frame (set! (.-frame object) value)
     :height (set! (.-height object) value)
     :hit-area (set! (.-hitArea object) value)
@@ -138,6 +145,8 @@
     :scale (set! (.-scale object) value)
     :scale-mode (set! (.-scaleMode object) value)
     :source (set! (.-source object) value)
+    :stroke (set! (.-stroke object) value)
+    :stroke-thickness (set! (.-strokeThickness object) value)
     :style (set! (.-style object) value)
     :text (set! (.-text object) value)
     :texture (set! (.-texture object) value)
@@ -147,6 +156,8 @@
     :tile-scale-offset (set! (.-tileScaleOffset object) value)
     :visible? (set! (.-visible object) value)
     :width (set! (.-width object) value)
+    :word-wrap (set! (.-wordWrap object) value)
+    :word-wrap-width (set! (.-wordWrapWidth object) value)
     :x (set! (.-x object) value)
     :y (set! (.-x object) value)))
 
@@ -155,6 +166,7 @@
   does not ensure the object is of the correct type."
   [object key]
   (case key
+    :align (.-align object)
     :alpha (.-alpha object)
     :anchor (.-anchor object)
     :animation-speed (.-animationSpeed object)
@@ -163,14 +175,20 @@
     :canvas (.-canvas object)
     :context (.-context object)
     :default-cursor (.-defaultCursor object)
+    :drop-shadow (.-dropShadow object)
+    :drop-shadow-angle (.-dropShadowAngle object)
+    :drop-shadow-color (.-dropShadowColor object)
+    :drop-shadow-distance (.-dropShadowDistance object)
+    :fill (.-fill object)
     :filter-area (.-filterArea object)
     :filters (.-filters object)
+    :font (.-font object)
     :frame (.-frame object)
     :height (.-height object)
     :hit-area (.-hitArea object)
     :interactive? (.-interactive object)
-    :mask (.-mask object)
     :loop? (.-loop object)
+    :mask (.-mask object)
     :pivot (.-pivot object)
     :points (.-points object)
     :position (.-position object)
@@ -180,6 +198,8 @@
     :scale-mode (.-scaleMode object)
     :size (.-size object)
     :source (.-source object)
+    :stroke (.-stroke object)
+    :stroke-thickness (.-strokeThickness object)
     :style (.-style object)
     :text (.-text object)
     :texture (.-texture object)
@@ -189,6 +209,8 @@
     :tile-scale-offset (.-tileScaleOffset object)
     :visible? (.-visible object)
     :width (.-width object)
+    :word-wrap (.-wordWrap object)
+    :word-wrap-width (.-wordWrapWidth object)
     :x (.-x object)
     :y (.-x object)))
 
@@ -203,8 +225,7 @@
   "Removes all properties defined in custom-properties and style-properties from
   the provided map."
   [properties]
-  (let [to-remove (union custom-properties style-properties)]
-    (filter (comp not to-remove key) properties)))
+  (apply dissoc properties (union custom-properties style-properties)))
 
 (defn overwrite
   "Default update function for :update and :tween, overwrites the existing value
@@ -226,19 +247,18 @@
   (fn [& args]
     (expr->value (apply function (map value->expr args)))))
 
-;; TODO: rewrite using doseq
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
   of the provided pixi.js object."
   [object properties & {:keys [function] :or {function overwrite}}]
-  (dorun
-   (map
-    (fn [entry]
-      (set-property! object (key entry)
-                     ((expr-wrap-first function)
-                      (get-property object (key entry))
-                      (val entry))))
-    (standard-properties properties))))
+  (let [replace! (fn [obj property value]
+                   (set-property! obj property ((expr-wrap-first function)
+                                                (get-property obj property)
+                                                value)))]
+    (doseq [[property value] (standard-properties properties)]
+      (replace! object property value))
+    (doseq [[property value] (select-keys properties style-properties)]
+      (replace! (.-style object) property value))))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -381,9 +401,9 @@
   "Instantiates and returns a new pixi.js Text object, which is also immediately
   added as a child of the global stage."
   [new-text-fn [_ identifier message properties]]
-  (let [style-properties (filter (comp style-properties key) properties)
-        text (new-text-fn message (clj->js style-properties))]
+  (let [text (new-text-fn message)]
     (when (:events properties) (add-event-handlers! identifier text properties))
+    (set-properties! text properties)
     (add-to-stage! text identifier properties)))
 
 (defn- handle-movie-clip
