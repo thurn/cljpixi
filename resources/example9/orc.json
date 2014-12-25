@@ -29,60 +29,60 @@
 	    "sourceSize":{"w":16, "h":18}
     },
     "walk_right_2":{
-      "frame":{"x":16, "y":18, "w":16, "h":18},
+      "frame":{"x":16, "y":19, "w":16, "h":18},
       "rotated":false,
       "trimmed":false,
     	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":18},
 	    "sourceSize":{"w":16, "h":18}
     },
     "walk_right_3":{
-      "frame":{"x":32, "y":18, "w":16, "h":18},
+      "frame":{"x":32, "y":19, "w":16, "h":18},
       "rotated":false,
       "trimmed":false,
     	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":18},
 	    "sourceSize":{"w":16, "h":18}
     },
     "walk_down_1":{
-      "frame":{"x":0, "y":36, "w":16, "h":18},
+      "frame":{"x":0, "y":37, "w":16, "h":18},
       "rotated":false,
       "trimmed":false,
     	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":18},
 	    "sourceSize":{"w":16, "h":18}
     },
     "walk_down_2":{
-      "frame":{"x":16, "y":36, "w":16, "h":18},
+      "frame":{"x":16, "y":37, "w":16, "h":18},
       "rotated":false,
       "trimmed":false,
     	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":18},
 	    "sourceSize":{"w":16, "h":18}
     },
     "walk_down_3":{
-      "frame":{"x":32, "y":36, "w":16, "h":18},
+      "frame":{"x":32, "y":37, "w":16, "h":18},
       "rotated":false,
       "trimmed":false,
     	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":18},
 	    "sourceSize":{"w":16, "h":18}
     },
     "walk_left_1":{
-      "frame":{"x":0, "y":54, "w":16, "h":18},
+      "frame":{"x":0, "y":55, "w":16, "h":17},
       "rotated":false,
       "trimmed":false,
-    	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":18},
-	    "sourceSize":{"w":16, "h":18}
+    	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":17},
+	    "sourceSize":{"w":16, "h":17}
     },
     "walk_left_2":{
-      "frame":{"x":16, "y":54, "w":16, "h":18},
+      "frame":{"x":16, "y":55, "w":16, "h":17},
       "rotated":false,
       "trimmed":false,
-    	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":18},
-	    "sourceSize":{"w":16, "h":18}
+    	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":17},
+	    "sourceSize":{"w":16, "h":17}
     },
     "walk_left_3":{
-      "frame":{"x":32, "y":54, "w":16, "h":18},
+      "frame":{"x":32, "y":55, "w":16, "h":17},
       "rotated":false,
       "trimmed":false,
-    	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":18},
-	    "sourceSize":{"w":16, "h":18}
+    	"spriteSourceSize":{"x":0, "y":0, "w":16, "h":17},
+	    "sourceSize":{"w":16, "h":17}
     }
   },
   "meta": {
