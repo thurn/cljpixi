@@ -24,9 +24,6 @@
 (def mouse-out-channel (chan))
 (sub events "mouse-out" mouse-out-channel)
 
-(defn dir [obj]
-  (js* "console.dir(obj);"))
-
 (defn example5 [render-channel input-channel]
   (dorun (map #(put! render-channel %) messages))
   (go

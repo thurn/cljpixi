@@ -520,7 +520,8 @@
   (if (sequential? message)
     (case (first message)
       :point (handle-point message)
-      :texture (handle-texture message))
+      :texture (handle-texture message)
+      (map expr->value message))
     message))
 
 ;; dispatch?
