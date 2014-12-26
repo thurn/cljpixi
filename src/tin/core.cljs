@@ -234,9 +234,9 @@
   (last args))
 
 (defn- expr-wrap-first
-  "Takes a two argument function and returns a value which will call value->expr
-  on the *first* argument, but not the second, and will call expr->value on the
-  result."
+  "Takes a two argument function and returns a function which will call
+  value->expr on the *first* argument, but not the second, and will call
+  expr->value on the result."
   [function]
   (fn [x y]
     (expr->value (function (value->expr x) y))))
@@ -247,18 +247,24 @@
   (fn [& args]
     (expr->value (apply function (map value->expr args)))))
 
+(defn- update-property!
+  "Sets the property 'property' of object 'obj' to the value 'value', applying
+   modification function 'function'."
+  [obj property value function]
+  (let [func (expr-wrap-first function)
+        old (get-property obj property)
+        new (func old value)]
+    (js* "0; debugger;")
+    (set-property! obj property new)))
+
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
   of the provided pixi.js object."
   [object properties & {:keys [function] :or {function overwrite}}]
-  (let [replace! (fn [obj property value]
-                   (set-property! obj property ((expr-wrap-first function)
-                                                (get-property obj property)
-                                                value)))]
-    (doseq [[property value] (standard-properties properties)]
-      (replace! object property value))
-    (doseq [[property value] (select-keys properties style-properties)]
-      (replace! (.-style object) property value))))
+  (doseq [[property value] (standard-properties properties)]
+    (update-property! object property value function))
+  (doseq [[property value] (select-keys properties style-properties)]
+    (update-property! (.-style object) property value function)))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -521,7 +527,7 @@
     (case (first message)
       :point (handle-point message)
       :texture (handle-texture message)
-      (map expr->value message))
+      (to-array (map expr->value message)))
     message))
 
 ;; dispatch?
