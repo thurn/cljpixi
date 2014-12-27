@@ -7,12 +7,6 @@
    (set! (.-eventListeners this)
          (update-in (.-eventListeners this) [type] (fnil conj #{}) listener))))
 
-(defn- remove-event-listener
-  [type listener]
-  (this-as
-   this
-   (set! (.-eventListeners this) (disj (.-eventListeners this) listener))))
-
 (defn- event-function
   [object type]
   (fn [interaction-data]
@@ -30,7 +24,11 @@
   (set! (.-ownerDocument object) (.-document js/window))
   (set! (.-style object) (js* "{}"))
   (set! (.-addEventListener object) add-event-listener)
-  (set! (.-removeEventListener object) add-event-listener)
+  (set! (.-removeEventListener object)
+        (fn [type listener]
+          (this-as this
+                   (set! (.-eventListeners this)
+                         (disj (.-eventListeners this) listener)))))
   (set! (.-mousedown object) (event-function object "mousedown"))
   (set! (.-mouseup object) (event-function object "mouseup"))
   (set! (.-mousemove object) (event-function object "mousemove"))

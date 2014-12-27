@@ -254,7 +254,6 @@
   (let [func (expr-wrap-first function)
         old (get-property obj property)
         new (func old value)]
-    (js* "0; debugger;")
     (set-property! obj property new)))
 
 (defn- set-properties!
@@ -296,6 +295,16 @@
   "Makes a new gesture recognizer constructor for recognizing hover events."
   [])
 
+(defn- event-callback
+  "Returns a callback function to invoke when an input event occurs."
+  [event-name identifier object]
+  (fn [data]
+    (let [args {:topic event-name :data (js->clj data) :identifier identifier}]
+      (put! event-channel
+            (if (.-parent object)
+              (assoc args :transform (.-worldTransform (.-parent object)))
+              args)))))
+
 (defn- add-event-handlers!
   "Adds event handlers to the provided display object."
   [identifier object properties]
@@ -314,13 +323,7 @@
                           :tap (.-Tap js/Hammer)
                           nil)
             event-name (get options "event" (name event))
-            callback (fn [data]
-                       (put! event-channel
-                             {:topic event-name
-                              :data (js->clj data)
-                              :identifier identifier
-                              :transform (.-worldTransform
-                                          (.-parent object))}))]
+            callback (event-callback event-name identifier object)]
         (if Constructor
           (do (.add manager (Constructor. (clj->js options)))
               (.on manager event-name callback))
@@ -499,6 +502,13 @@
   (doseq [object (@display-objects identifier ()) action actions]
     (handle-animation-action object tween-options action)))
 
+(defn- handle-stage-update
+  "Applies a property update to the global Stage object."
+  [[:stage-update properties & {:keys [function]
+                                :or {function overwrite}}]]
+  (when (:events properties) (add-event-handlers! "@stage" @stage properties))
+  (set-properties! @stage properties :function function))
+
 (defn- handle-clear
   "Clears all values from the stage."
   [[:clear]]
@@ -547,6 +557,7 @@
       :animation (handle-animation message)
       :text (handle-text new-text message)
       :bitmap-text (handle-text new-bitmap-text message)
+      :stage-update (handle-stage-update message)
       :clear (handle-clear message))
     message))
 
@@ -620,7 +631,7 @@
   [:load & filenames] ;; Blocks rendering until loaded.
   [:text identifier message options]
   [:bitmap-text identifier message options]
-
+  [:interactive-stage] ;; Requests to make the stage an interactive object.
 
   ;; Texture expressions:
   [:image "path.png"]
