@@ -26,7 +26,8 @@
                 :optimizations :advanced
                 :pretty-print false
                 :externs ["externs/tweenjs.min.js" "externs/pixi.min.js"
-                          "externs/howler.min.js"]
+                          "externs/howler.min.js" "externs/hammer.js"]
                 :closure-warnings {:externs-validation :off
                                    :non-standard-jsdoc :off}
-                :source-map "compiled/tin.sourcemap.js"}}]})
+                ;:source-map "compiled/tin.sourcemap.js"
+             }}]})

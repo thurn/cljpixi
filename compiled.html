@@ -9,9 +9,15 @@
         background-color: #000000;
         color: #ffffff;
       }
+
+      a {
+        color: #3dbbd2;
+        font-size: 1.5em;
+        margin-right: 0.5em;
+      }
     </style>
     <script>
-      SCRIPT_COUNT = 3;
+      SCRIPT_COUNT = 4;
       scriptLoaded = function() {
         window.console.log("script loaded: " + SCRIPT_COUNT);
         SCRIPT_COUNT--;
@@ -20,9 +26,16 @@
     </script>
   </head>
   <body>
-    <p>compiled</p>
+    <p>
+      <a href="#example1">Example 1</a> <a href="#example2">Example 2</a>
+      <a href="#example3">Example 3</a> <a href="#example4">Example 4</a>
+      <a href="#example5">Example 5</a> <a href="#example6">Example 6</a>
+      <a href="#example7">Example 7</a> <a href="#example8">Example 8</a>
+      <a href="#example9">Example 9</a> <a href="#example10">Example 10</a>
+    </p>
     <script async onload="scriptLoaded()" src="resources/js/pixi.js"></script>
     <script async onload="scriptLoaded()" src="resources/js/tweenjs-0.5.1.min.js"></script>
+    <script async onload="scriptLoaded()" src="resources/js/hammer.js"></script>
     <script async onload="scriptLoaded()" src="compiled/tin.min.js"></script>
   </body>
 </html>

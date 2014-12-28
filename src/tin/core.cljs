@@ -440,7 +440,7 @@
     (when (:events properties)
       (add-event-handlers! identifier container properties))
     (set-properties! container properties)
-    (add-to-stage! container name properties)))
+    (add-to-stage! container identifier properties)))
 
 (defn- new-tween
   "Returns a new Tween instance with the provided target object."
@@ -649,7 +649,6 @@
   ;; looping tweens are always between two fixed values.
   [:play-clip frame?]
   [:stop-clip frame?]
-
 
   ;; Events:
   ;; Specify a :events list as an option to any DisplayObject.
