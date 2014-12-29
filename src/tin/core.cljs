@@ -1,6 +1,7 @@
 (ns tin.core
   (:require
    [tin.ease]
+   [tin.tween-plugin]
    [tin.events :refer [impersonate-dom-node!]]
    [clojure.set :refer [union]]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
@@ -463,6 +464,25 @@
   (fn [[:point old-x old-y] [:point new-x new-y]]
     [:point (binary-function old-x new-x) (binary-function old-y new-y)]))
 
+(defn- handle-tween-action-XXX
+  "Handles the :tween action"
+  [object tween-options [:tween property value
+                         & {:keys [duration ease function]
+                            :or {duration 1000
+                                 ease (tin.ease/linear)
+                                 function overwrite}}]]
+  (let [current-value (js->clj (get-property object property))
+        target ((expr-wrap-first function) current-value value)]
+    (match value
+           [:point x y] (.to (new-tween current-value tween-options)
+                             (clj->js {:x x :y y})
+                             duration
+                             ease)
+           :else (.to (new-tween object tween-options)
+                      (clj->js {property target})
+                      duration
+                      ease))))
+
 (defn- handle-tween-action
   "Handles the :tween action"
   [object tween-options [:tween property value
@@ -585,6 +605,7 @@
   [& {:keys [width height background-color view transparent? antialias?]
       :or {width 500, height 500, background-color 0xFFFFFF, view nil,
            transparent? false, antialias? false}}]
+  (tin.tween-plugin/install-tween-plugin)
   (reset! stage (new-stage background-color true)) ;; interactive
   (reset! renderer (.autoDetectRenderer js/PIXI width height view
                                         transparent? antialias?))
