@@ -1,10 +1,10 @@
 (ns tin.examples.example4
   (:require
+   [tin.examples.utils :refer [rand-between]]
    [tin.core :refer [point-binary-function]]
-   [tin.examples.example-utils :refer [rand-between]]
    [cljs.core.async :refer [put!]]))
 
-(def star-count 5000)
+(def ball-count 5000)
 
 (defn ball-sprite [i]
   [:sprite
@@ -22,8 +22,8 @@
 
 (def messages
   (into
-   (mapv ball-sprite (range star-count))
-   (mapv ball-animation (range star-count))))
+   (mapv ball-sprite (range ball-count))
+   (mapv ball-animation (range ball-count))))
 
 (defn example4 [render-channel input-channel]
   (dorun (map #(put! render-channel %) messages)))

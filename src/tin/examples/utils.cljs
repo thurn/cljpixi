@@ -1,4 +1,4 @@
-(ns tin.examples.example-utils)
+(ns tin.examples.utils)
 
 (defn rand-between
   "Returns a random number between low (inclusive) and high (exclusive)."

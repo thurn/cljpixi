@@ -12,17 +12,17 @@
 
 (def ^:private stage
   "The global Stage object which coordinates all on-screen drawing. You must
-   call initialize before any other drawing operations to create the Stage."
+  call initialize before any other drawing operations to create the Stage."
   (atom nil))
 
 (def ^:private renderer
   "The global Renderer object which draws to the canvas. You must call
-   initialize to create the Renderer before doing any rendering."
+  initialize to create the Renderer before doing any rendering."
   (atom nil))
 
 (def ^:private display-objects
   "A map from keys to seqs of pixi DisplayObjects which have been added to
-   the stage as children."
+  the stage as children."
   (atom {}))
 
 (def ^:private channel-buffer-size 65536)
@@ -33,9 +33,9 @@
 
 (def events
   "A publication for user input events. You can specify an input key for a
-   specific type of user event on a display object, and that key will be used as
-   the topic of a message which will be published here when that user input
-   occurs."
+  specific type of user event on a display object, and that key will be used as
+  the topic of a message which will be published here when that user input
+  occurs."
   (pub event-channel :topic))
 
 (defn- new-point [x y]
@@ -185,7 +185,8 @@
 
 (def ^:private input-events
   #{:click :mouse-down :mouse-up :mouse-up-outside :mouse-over :mouse-out
-    :tap :touch-start :touch-end :touch-end-outside :mouse-move :touch-move})
+    :tap :touch-start :touch-end :touch-end-outside :mouse-move :touch-move
+    :mouse-move-inside})
 
 (defn set-input-function!
   [object event fn]
@@ -201,11 +202,12 @@
     :touch-end (set! (.-touchend object) fn)
     :touch-end-outside (set! (.-touchendoutside object) fn)
     :mouse-move (set! (.-mousemove object) fn)
-    :touch-move (set! (.-touchmove object) fn)))
+    :touch-move (set! (.-touchmove object) fn)
+    :mouse-move-inside (set! (.-mousemoveinside object) fn)))
 
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
-   of the provided pixi.js object."
+  of the provided pixi.js object."
   [object properties]
   (dorun
    (map
@@ -219,7 +221,7 @@
 
 (defn- animate-loop
   "Animation loop function, intended to be called repeatedly by
-   requestAnimationFrame"
+  requestAnimationFrame"
   [timestamp]
   (js/requestAnimFrame animate-loop)
   (.tick (.-Tween js/createjs)
@@ -241,7 +243,7 @@
 
 (defn- add-input-callbacks!
   "Add user input callbacks to the provided DisplayObject where they are
-   requested."
+  requested."
   [key object properties]
   (when-let [events (not-empty (intersection input-events
                                              (into #{} (keys properties))))]
@@ -258,6 +260,13 @@
   "Gets the global coordinates of an interaction event as an {:x :y} map."
   [interaction-data]
   (point->map (.-global interaction-data)))
+
+(defn interaction-target-coordinates
+  "Gets the coordinates of an interaction event in the coordinate system of the
+  target of the event."
+  [interaction-data]
+  (js* "0; debugger;")
+  (point->map (.getLocalPosition interaction-data (.-target interaction-data))))
 
 (defn interaction-coordinates
   "Gets the coordinates of an interaction event in the coordinate system of the
@@ -286,7 +295,7 @@
 
 (defn- handle-sprite
   "Instantiates and returns a new pixi.js Sprite, which is also immediately
-   added as a child of the global stage."
+  added as a child of the global stage."
   [[:sprite key texture properties]]
   (let [sprite (new-sprite (handle-message texture))]
     (add-input-callbacks! key sprite properties)
@@ -301,14 +310,14 @@
 
 (defn- handle-update
   "Updates the properties of an existing DisplayObject. Cannot be used to set
-   user input functions."
+  user input functions."
   [[:update key properties]]
   (doseq [object (@display-objects key)]
     (set-properties! object properties)))
 
 (defn- handle-container
   "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
-   also be added as a child of the global stage."
+  also be added as a child of the global stage."
   [[:container name properties & children]]
   (let [container (new-display-object-container)]
     (dorun (map #(.addChild container (handle-message %)) children))
@@ -349,17 +358,17 @@
   [object tween-options action]
   (case (first action)
     :tween
-      (handle-tween-action object tween-options action)
+    (handle-tween-action object tween-options action)
     :play-clip
-      (let [[:play-clip frame] action]
-        (if frame (.gotoAndPlay object frame) (.play object)))
+    (let [[:play-clip frame] action]
+      (if frame (.gotoAndPlay object frame) (.play object)))
     :stop-clip
-      (let [[:stop-clip frame] action]
-        (if frame (.gotoAndStop object frame) (.stop object)))))
+    (let [[:stop-clip frame] action]
+      (if frame (.gotoAndStop object frame) (.stop object)))))
 
 (defn- handle-animation
   "Creates a new TweenJS Tween object for each object with the provided key and
-   starts it with the supplied actions."
+  starts it with the supplied actions."
   [[:animation key tween-options & actions]]
   (doseq [object (@display-objects key ()) action actions]
     (handle-animation-action object tween-options action)))
@@ -389,14 +398,31 @@
 
 (defn- load-assets
   "Loads assets with the provided paths by inspecting their file extensions.
-   Returns a channel which will have the message :loaded put! onto it once
-   the asset loading is completed."
+  Returns a channel which will have the message :loaded put! onto it once
+  the asset loading is completed."
   [[:load & assets]]
   (let [result-channel (chan)
         loader (new-asset-loader (to-array assets))]
     (.addEventListener loader "onComplete" #(put! result-channel :loaded))
     (.load loader)
     result-channel))
+
+(defn- attach-mouse-move-handler!
+  "Attaches a handler for the custom :mouse-move-inside event."
+  [stage]
+  (let [manager (.-interactionManager stage)]
+    (set! (.-mousemove stage)
+          (fn [event]
+            (if (.-dirty manager)
+              (.rebuildInteractiveGraph manager))
+            (doseq [item (.-interactiveItems manager)]
+              (when (and (.hitTest manager item (.-mouse manager))
+                       (not= item stage)
+                       (.-mousemoveinside item))
+                (js* "0; debugger;")
+                (set! (.-target event) item)
+                (set! (.-mouse manager) event)
+                (.mousemoveinside item event)))))))
 
 (defn initialize
   "The function to create the pixi.js Stage and Renderer objects which manage
@@ -418,6 +444,7 @@
   (let [render-channel (chan channel-buffer-size)
         input-channel (chan channel-buffer-size)
         view (.-view @renderer)]
+    (attach-mouse-move-handler! @stage)
     (go (loop [[type & _ :as message] (<! render-channel)]
           (if (= type :load)
             (<! (load-assets message))  ; Block until assets are loaded.
@@ -448,7 +475,7 @@
           [:tween :rotation (* 2 Math/PI) {:duration 1000}]]
          [:animation :moving-bunny {:loop true}
           [:tween :position {:x 500 :y 500} :duration 5000
-                  :function (point-binary-function +)]]]]
+           :function (point-binary-function +)]]]]
     (dorun (map #(put! render-channel %) messages))))
 
 (defn example2-sprites
@@ -519,23 +546,23 @@
   [:update key properties]
   [:point x y]
   [:texture texture-expression]
-    ;; Valid Texture expressions:
-    [:image "path.png"]
-    [:canvas canvas-object]
-    [:frame frame-id]
+  ;; Valid Texture expressions:
+  [:image "path.png"]
+  [:canvas canvas-object]
+  [:frame frame-id]
   [:animation key options & actions]
-    ;; Valid Actions:
-    [:tween property value {:function f :duration d :ease e}]
-    ;; Value can be a number or {:x :y} map for PIXI.Point properties
-    ;; Function takes 2 args - previous and value, and should return the
-    ;; new value to tween to. Default is to discard previous, but you can e.g.
-    ;; pass + to make it behave like a += operation.
-    ;; Note that the function is not re-evalutated with the :loop option,
-    ;; looping tweens are always between two fixed values.
+  ;; Valid Actions:
+  [:tween property value {:function f :duration d :ease e}]
+  ;; Value can be a number or {:x :y} map for PIXI.Point properties
+  ;; Function takes 2 args - previous and value, and should return the
+  ;; new value to tween to. Default is to discard previous, but you can e.g.
+  ;; pass + to make it behave like a += operation.
+  ;; Note that the function is not re-evalutated with the :loop option,
+  ;; looping tweens are always between two fixed values.
 
-    [:play-clip frame?]
-    [:stop-clip frame?]
+  [:play-clip frame?]
+  [:stop-clip frame?]
   [:timeline options & tweens]
   [:load & filenames] ;; Blocks rendering until loaded.
   [:clear] ;; Remove everything in scene.
-)
+  )
