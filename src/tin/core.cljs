@@ -483,24 +483,33 @@
                       duration
                       ease))))
 
+(defn- build-animation-target-map
+  "Looks up the current value of each property on the provided object and
+   constructs an animation target map by applying the provided binary function
+   or functions to (current_value, map_value) to compute the final map value."
+  [object initial-map function-or-map]
+  (letfn [(get-fn [property]
+            (if (map? function-or-map)
+              (get function-or-map property overwrite)
+              function-or-map))]
+    (into {}
+          (for [[property value] initial-map
+                :let [original-value (get-property object property)
+                      function (expr-wrap-first (get-fn property))]]
+            [property (function original-value value)]))))
+
 (defn- handle-tween-action
   "Handles the :tween action"
-  [object tween-options [:tween property value
+  [object tween-options [:tween properties
                          & {:keys [duration ease function]
                             :or {duration 1000
                                  ease (tin.ease/linear)
                                  function overwrite}}]]
-  (let [current-value (js->clj (get-property object property))
-        target ((expr-wrap-first function) current-value value)]
-    (match value
-           [:point x y] (.to (new-tween current-value tween-options)
-                             (clj->js {:x x :y y})
-                             duration
-                             ease)
-           :else (.to (new-tween object tween-options)
-                      (clj->js {property target})
-                      duration
-                      ease))))
+  (let [target-map (build-animation-target-map object properties function)]
+    (.to (new-tween object tween-options)
+         (clj->js target-map)
+         duration
+         ease)))
 
 (defn- handle-animation-action
   "Applies a TweenJS action to the provided tween."

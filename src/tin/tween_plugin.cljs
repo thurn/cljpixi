@@ -6,12 +6,17 @@
   (prn "init")
   value)
 
-(defn- step [tween prop start-value end-value inject-props]
+(defn- step []
   (prn "step"))
 
-(defn- tween [tween prop value start-values end-values ratio wait end]
-  (prn "tween")
-  value)
+(defn- tween [tween prop value start-values end-values ratio]
+  (let [start (aget start-values prop)
+        end (aget end-values prop)
+        ;; Avoid allocating lots of extra Point objects:
+        result (if (identical? value start) (.clone value) value)]
+  (set! (.-x result) (+ (.-x start) (* ratio (- (.-x end) (.-x start)))))
+  (set! (.-y result) (+ (.-y start) (* ratio (- (.-y end) (.-y start)))))
+  result))
 
 (def TweenPlugin (js-obj
   "priority" 0
