@@ -146,6 +146,8 @@
   [& args]
   (last args))
 
+;; TODO: Can we eliminate this an just have value->expr do nothing on args that
+;; are already exprs?
 (defn- expr-wrap-first
   "Takes a two argument function and returns a function which will call
   value->expr on the *first* argument, but not the second, and will call
@@ -376,25 +378,6 @@
   (fn [[:point old-x old-y] [:point new-x new-y]]
     [:point (binary-function old-x new-x) (binary-function old-y new-y)]))
 
-(defn- handle-tween-action-XXX
-  "Handles the :tween action"
-  [object tween-options [:tween property value
-                         & {:keys [duration ease function]
-                            :or {duration 1000
-                                 ease (tin.ease/linear)
-                                 function overwrite}}]]
-  (let [current-value (js->clj (get-property object property))
-        target ((expr-wrap-first function) current-value value)]
-    (match value
-           [:point x y] (.to (new-tween current-value tween-options)
-                             (clj->js {:x x :y y})
-                             duration
-                             ease)
-           :else (.to (new-tween object tween-options)
-                      (clj->js {property target})
-                      duration
-                      ease))))
-
 (defn- build-animation-target-map
   "Looks up the current value of each property on the provided object and
    constructs an animation target map by applying the provided binary function
@@ -408,7 +391,7 @@
           (for [[property value] initial-map
                 :let [original-value (get-property object property)
                       function (expr-wrap-first (get-fn property))]]
-            [property (function original-value value)]))))
+            [(to-camelcase property) (function original-value value)]))))
 
 (defn- handle-tween-action
   "Handles the :tween action"
@@ -534,6 +517,7 @@
   (let [render-channel (chan channel-buffer-size)
         input-channel (chan channel-buffer-size)
         view (.-view @renderer)]
+    ;; TODO: Load messages in batches to allow incremental rendering
     (go (loop [[type & _ :as message] (<! render-channel)]
           (if (= type :load)
             (<! (load-assets message))  ; Block until assets are loaded.
@@ -547,11 +531,6 @@
   (dorun (map #(put! render-channel %) messages)))
 
 ;; Todo: support from-frames helper function constructors for sprites & clips
-
-;; Todo: convert from clojure property names to javascript camelcase names
-;; correctly.
-
-;; Todo: Is there a way to fold options like :loop into the body of :tween?
 
 ;; Todo: Get rid of [:point] and just do {:x :y}?
 
