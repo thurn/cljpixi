@@ -1,6 +1,7 @@
 (ns tin.tween-plugin)
 
-(def tween-properties (array "position"))
+(def tween-properties (array "position" "scale" "pivot" "anchor" "tilePosition"
+                             "tileScale" "tileScaleOffset"))
 
 (defn- init [tween prop value]
   (prn "init")

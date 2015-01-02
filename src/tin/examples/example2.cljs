@@ -19,10 +19,10 @@
         [[:load "resources/example2/SpriteSheet.json"]
          example2-sprites
          [:animation :alien {:loop true}
-          [:tween :rotation (* 2 Math/PI) :duration 1000]]
+          [:tween {:rotation (* 2 Math/PI)} :duration 1000]]
          [:animation :aliens {:loop true}
-          [:tween :scale [:point 0.1 0.1] :duration 3000
+          [:tween {:scale [:point 0.1 0.1]} :duration 3000
            :ease #(Math/sin (* Math/PI %))]]
          [:animation :aliens {:loop true}
-          [:tween :rotation (* Math/PI 2) :duration 20000]]]]
+          [:tween {:rotation (* Math/PI 2)} :duration 20000]]]]
     (put-messages! render-channel messages)))

@@ -4,6 +4,7 @@
    [tin.tween-plugin]
    [tin.events :refer [impersonate-dom-node!]]
    [clojure.set :refer [union]]
+   [clojure.string]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
                             alts! timeout pub]]
    [cljs.core.match])
@@ -110,110 +111,21 @@
 (declare value->expr)
 (declare expr->value)
 
-(defn- set-property!
-  "Sets a property on a pixi.js object. Maps keywords to known properties, but
-  does not ensure the object is of the correct type."
+(defn- to-camelcase
+  "Converts a dash-separated string to camelCase and strips ? characters."
+  [string]
+  (let [parts (clojure.string/split (name string) #"-")]
+    (clojure.string/replace
+     (str (first parts) (apply str (map clojure.string/capitalize
+                                        (rest parts)))) "?" "")))
+
+(defn set-property!
   [object key value]
-  (case key
-    :align (set! (.-align object) value)
-    :alpha (set! (.-alpha object) value)
-    :anchor (set! (.-anchor object) value)
-    :animation-speed (set! (.-animationSpeed object) value)
-    :blend-mode (set! (.-blendMode object) value)
-    :button-mode? (set! (.-buttonMode object) value)
-    :canvas (set! (.-canvas object) value)
-    :context (set! (.-context object) value)
-    :default-cursor (set! (.-defaultCursor object) value)
-    :drop-shadow (set! (.-dropShadow object) value)
-    :drop-shadow-angle (set! (.-dropShadowAngle object) value)
-    :drop-shadow-color (set! (.-dropShadowColor object) value)
-    :drop-shadow-distance (set! (.-dropShadowDistance object) value)
-    :fill (set! (.-fill object) value)
-    :filter-area (set! (.-filterArea object) value)
-    :filters (set! (.-filters object) value)
-    :font (set! (.-font object) value)
-    :frame (set! (.-frame object) value)
-    :height (set! (.-height object) value)
-    :hit-area (set! (.-hitArea object) value)
-    :interactive? (set! (.-interactive object) value)
-    :loop? (set! (.-loop object) value)
-    :mask (set! (.-mask object) value)
-    :pivot (set! (.-pivot object) value)
-    :points (set! (.-points object) value)
-    :position (set! (.-position object) value)
-    :radius (set! (.-radius object) value)
-    :rotation (set! (.-rotation object) value)
-    :scale (set! (.-scale object) value)
-    :scale-mode (set! (.-scaleMode object) value)
-    :source (set! (.-source object) value)
-    :stroke (set! (.-stroke object) value)
-    :stroke-thickness (set! (.-strokeThickness object) value)
-    :style (set! (.-style object) value)
-    :text (set! (.-text object) value)
-    :texture (set! (.-texture object) value)
-    :textures (set! (.-textures object) value)
-    :tile-position (set! (.-tilePosition object) value)
-    :tile-scale (set! (.-tileScale object) value)
-    :tile-scale-offset (set! (.-tileScaleOffset object) value)
-    :visible? (set! (.-visible object) value)
-    :width (set! (.-width object) value)
-    :word-wrap (set! (.-wordWrap object) value)
-    :word-wrap-width (set! (.-wordWrapWidth object) value)
-    :x (set! (.-x object) value)
-    :y (set! (.-x object) value)))
+  (aset object (to-camelcase key) value))
 
 (defn- get-property
-  "Gets a property from a pixi.js object. Maps keywords to known properties, but
-  does not ensure the object is of the correct type."
   [object key]
-  (case key
-    :align (.-align object)
-    :alpha (.-alpha object)
-    :anchor (.-anchor object)
-    :animation-speed (.-animationSpeed object)
-    :blend-mode (.-blendMode object)
-    :button-mode? (.-buttonMode object)
-    :canvas (.-canvas object)
-    :context (.-context object)
-    :default-cursor (.-defaultCursor object)
-    :drop-shadow (.-dropShadow object)
-    :drop-shadow-angle (.-dropShadowAngle object)
-    :drop-shadow-color (.-dropShadowColor object)
-    :drop-shadow-distance (.-dropShadowDistance object)
-    :fill (.-fill object)
-    :filter-area (.-filterArea object)
-    :filters (.-filters object)
-    :font (.-font object)
-    :frame (.-frame object)
-    :height (.-height object)
-    :hit-area (.-hitArea object)
-    :interactive? (.-interactive object)
-    :loop? (.-loop object)
-    :mask (.-mask object)
-    :pivot (.-pivot object)
-    :points (.-points object)
-    :position (.-position object)
-    :radius (.-radius object)
-    :rotation (.-rotation object)
-    :scale (.-scale object)
-    :scale-mode (.-scaleMode object)
-    :size (.-size object)
-    :source (.-source object)
-    :stroke (.-stroke object)
-    :stroke-thickness (.-strokeThickness object)
-    :style (.-style object)
-    :text (.-text object)
-    :texture (.-texture object)
-    :textures (.-textures object)
-    :tile-position (.-tilePosition object)
-    :tile-scale (.-tileScale object)
-    :tile-scale-offset (.-tileScaleOffset object)
-    :visible? (.-visible object)
-    :width (.-width object)
-    :word-wrap (.-wordWrap object)
-    :word-wrap-width (.-wordWrapWidth object)
-    :x (.-x object)
-    :y (.-x object)))
+  (aget object (to-camelcase key)))
 
 (def ^:private custom-properties #{:events})
 
@@ -507,7 +419,7 @@
                                  function overwrite}}]]
   (let [target-map (build-animation-target-map object properties function)]
     (.to (new-tween object tween-options)
-         (clj->js target-map)
+         (clj->js target-map) ; convert name-style to nameStyle
          duration
          ease)))
 
@@ -670,8 +582,7 @@
 
 
   ;; Actions:
-  [:tween property value {:function f :duration d :ease e}]
-  ;; Value can be a number or {:x :y} map for PIXI.Point properties
+  [:tween properties {:function f :duration d :ease e}]
   ;; Function takes 2 args - previous and value, and should return the
   ;; new value to tween to. Default is to discard previous, but you can e.g.
   ;; pass + to make it behave like a += operation.
@@ -679,6 +590,7 @@
   ;; looping tweens are always between two fixed values.
   [:play-clip frame?]
   [:stop-clip frame?]
+  [:update identifier properties :function function]
 
   ;; Events:
   ;; Specify a :events list as an option to any DisplayObject.
