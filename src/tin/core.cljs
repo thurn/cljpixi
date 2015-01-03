@@ -394,37 +394,34 @@
             [(to-camelcase property) (function original-value value)]))))
 
 (defn- handle-tween-action
-  "Handles the :tween action"
-  [object tween-options [:tween properties
-                         & {:keys [duration ease function]
-                            :or {duration 1000
-                                 ease (tin.ease/linear)
-                                 function overwrite}}]]
+  "Handles the :tween action within an animation."
+  [the-tween object [:tween properties &
+                     {:keys [duration ease function]
+                      :or {duration 1000 ease (tin.ease/linear) function {}}}]]
   (let [target-map (build-animation-target-map object properties function)]
-    (.to (new-tween object tween-options)
-         (clj->js target-map) ; convert name-style to nameStyle
-         duration
-         ease)))
+    (.to the-tween (clj->js target-map) duration ease)))
 
-(defn- handle-animation-action
-  "Applies a TweenJS action to the provided tween."
-  [object options action]
-  (case (first action)
-    :tween
-    (handle-tween-action object options action)
-    :play-clip
-    (let [[:play-clip frame] action]
-      (if frame (.gotoAndPlay object frame) (.play object)))
-    :stop-clip
-    (let [[:stop-clip frame] action]
-      (if frame (.gotoAndStop object frame) (.stop object)))))
+(defn- handle-clip-action
+  "Handles the :play-clip and :stop-clip actions within an animation."
+  [tween object [type frame]]
+  (let [callback (fn [] (case type
+                          :play-clip (if frame (.gotoAndPlay object frame)
+                                         (.play object))
+                          :stop-clip (if frame (.gotoAndStop object frame)
+                                         (.stop object))))]
+    (.call tween callback)))
 
 (defn- handle-animation
   "Creates a new TweenJS Tween object for each object with the provided
-  identifier and starts it with the supplied actions."
-  [[:animation identifier tween-options & actions]]
-  (doseq [object (@display-objects identifier ()) action actions]
-    (handle-animation-action object tween-options action)))
+   identifier and queues animation actions on it."
+  [[:animation identifier options & actions]]
+  (doseq [object (@display-objects identifier ())]
+    (let [tween (new-tween object options)]
+      (doseq [action actions]
+        (case (first action)
+          :tween (handle-tween-action tween object action)
+          :play-clip (handle-clip-action tween object action)
+          :stop-clip (handle-clip-action tween object action))))))
 
 (defn- handle-stage-update
   "Applies a property update to the global Stage object."
