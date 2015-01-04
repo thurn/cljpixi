@@ -23,10 +23,10 @@
 (def messages
   [[:load "resources/example9/orc.json"]
    [:stage-update {:events [[:tap]]}]
-   [:movie-clip "walk" walk-right
+   [:movie-clip "player" walk-right
     {:position [:point 100 100] :loop? true :animation-speed 0.2
      :scale [:point 5 5]}]
-   [:animation "walk" {} [:play-clip 0]]])
+   [:animation "player" {} [:play-clip 0]]])
 
 (def tap-channel (chan))
 (sub events "tap" tap-channel)
@@ -35,5 +35,6 @@
   (put-messages! render-channel messages)
   (go
     (while true
-      (let [{identifier :identifier} (<! tap-channel)]
-        (>! render-channel [:update "walk" {:textures walk-left}])))))
+      (let [{identifier :identifier {{x "x"} "center"} :data} (<! tap-channel)]
+        (prn x)
+        (>! render-channel [:update "player" {:textures walk-left}])))))

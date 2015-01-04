@@ -206,10 +206,6 @@
     (when identifier (swap! display-objects add-object identifier object))
     object))
 
-(defn- hover-recognizer
-  "Makes a new gesture recognizer constructor for recognizing hover events."
-  [])
-
 (defn- event-callback
   "Returns a callback function to invoke when an input event occurs."
   [event-name identifier object]
@@ -220,6 +216,35 @@
               (assoc args :transform (.-worldTransform (.-parent object)))
               args)))))
 
+(defn- add-standard-callback
+  "Adds a standard callback to an object (one not based on a gesture
+  recognizer)"
+  [name object callback]
+  (case name
+    :mouse-over (set! (.-mouseover object) callback)
+    :mouse-out (set! (.-mouseout object) callback)
+    :click-start (do (set! (.-mousedown object) callback)
+                     (set! (.-touchstart object) callback))
+    :click-end-outside (do (set! (.-mouseupoutside object) callback)
+                           (set! (.-touchendoutside object) callback))
+    :click-end (do (set! (.-mouseup object) callback)
+                   (set! (.-touchend object) callback)
+                   (set! (.-mouseupoutside object) callback)
+                   (set! (.-touchendoutside object) callback))))
+
+(defn- get-recognizer-constructor
+  "Looks up the constructor function for the recognizer with the provided name,
+  returning nil if no matching constructor is found."
+  [name]
+  (case name
+    :pan (.-Pan js/Hammer)
+    :pinch (.-Pinch js/Hammer)
+    :press (.-Press js/Hammer)
+    :rotate (.-Rotate js/Hammer)
+    :swipe (.-Swipe js/Hammer)
+    :tap (.-Tap js/Hammer)
+    nil))
+
 (defn- add-event-handlers!
   "Adds event handlers to the provided display object."
   [identifier object properties]
@@ -229,30 +254,13 @@
         events (:events properties)]
     (doseq [recognizer events]
       (let [[event & {:as options}] recognizer
-            Constructor (case (first recognizer)
-                          :pan (.-Pan js/Hammer)
-                          :pinch (.-Pinch js/Hammer)
-                          :press (.-Press js/Hammer)
-                          :rotate (.-Rotate js/Hammer)
-                          :swipe (.-Swipe js/Hammer)
-                          :tap (.-Tap js/Hammer)
-                          nil)
+            Constructor (get-recognizer-constructor event)
             event-name (get options "event" (name event))
             callback (event-callback event-name identifier object)]
         (if Constructor
           (do (.add manager (Constructor. (clj->js options)))
               (.on manager event-name callback))
-          (case (first recognizer)
-            :mouse-over (set! (.-mouseover object) callback)
-            :mouse-out (set! (.-mouseout object) callback)
-            :click-start (do (set! (.-mousedown object) callback)
-                             (set! (.-touchstart object) callback))
-            :click-end-outside (do (set! (.-mouseupoutside object) callback)
-                                   (set! (.-touchendoutside object) callback))
-            :click-end (do (set! (.-mouseup object) callback)
-                           (set! (.-touchend object) callback)
-                           (set! (.-mouseupoutside object) callback)
-                           (set! (.-touchendoutside object) callback))))))))
+          (add-standard-callback event object callback))))))
 
 (defn local-coordinates
   "Transforms a point from global window coordinates into the coordinate system
@@ -411,6 +419,12 @@
                                          (.stop object))))]
     (.call tween callback)))
 
+(defn- handle-default-action
+  "Handles the default action inside an animation, which queues a new message
+   in the animation."
+  [tween object message]
+  (.call tween #(handle-message message)))
+
 (defn- handle-animation
   "Creates a new TweenJS Tween object for each object with the provided
    identifier and queues animation actions on it."
@@ -421,7 +435,8 @@
         (case (first action)
           :tween (handle-tween-action tween object action)
           :play-clip (handle-clip-action tween object action)
-          :stop-clip (handle-clip-action tween object action))))))
+          :stop-clip (handle-clip-action tween object action)
+          (handle-default-action tween object action))))))
 
 (defn- handle-stage-update
   "Applies a property update to the global Stage object."
@@ -474,7 +489,6 @@
   [message]
   (if (sequential? message)
     (case (first message)
-      :messages (dorun (map handle-message (rest message)))
       :point (handle-point message)
       :texture (handle-texture message)
       :sprite (handle-sprite message)
