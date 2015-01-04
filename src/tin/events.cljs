@@ -1,5 +1,12 @@
 (ns tin.events)
 
+(defn- add-event-listener
+  [type listener]
+  (this-as
+   this
+   (set! (.-eventListeners this)
+         (update-in (.-eventListeners this) [type] (fnil conj #{}) listener))))
+
 (defn- event-function
   [object type]
   (fn [interaction-data]
@@ -16,15 +23,7 @@
   (set! (.-eventListeners object) {})
   (set! (.-ownerDocument object) (.-document js/window))
   (set! (.-style object) (js* "{}"))
-  (set! (.-addEventListener object)
-        (fn [type listener]
-          (this-as
-           this
-           (set! (.-eventListeners this)
-                 (update-in (.-eventListeners this)
-                            [type]
-                            (fnil conj #{})
-                            listener)))))
+  (set! (.-addEventListener object) add-event-listener)
   (set! (.-removeEventListener object)
         (fn [type listener]
           (this-as this

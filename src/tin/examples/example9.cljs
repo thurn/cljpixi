@@ -12,6 +12,14 @@
                 [:texture [:frame "walk_left_2"]]
                 [:texture [:frame "walk_left_3"]]])
 
+(def walk-up [[:texture [:frame "walk_up_1"]]
+              [:texture [:frame "walk_up_2"]]
+              [:texture [:frame "walk_up_3"]]])
+
+(def walk-down [[:texture [:frame "walk_down_1"]]
+                [:texture [:frame "walk_down_2"]]
+                [:texture [:frame "walk_down_3"]]])
+
 (def messages
   [[:load "resources/example9/orc.json"]
    [:stage-update {:events [[:tap]]}]

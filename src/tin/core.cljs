@@ -430,6 +430,13 @@
   (when (:events properties) (add-event-handlers! "@stage" @stage properties))
   (set-properties! @stage properties :function function))
 
+(defn- handle-stage-update
+  "Applies a property update to the global Stage object."
+  [[:stage-update properties & {:keys [function]
+                                :or {function overwrite}}]]
+  (when (:events properties) (add-event-handlers! "@stage" @stage properties))
+  (set-properties! @stage properties :function function))
+
 (defn- handle-clear
   "Clears all values from the stage."
   [[:clear]]
