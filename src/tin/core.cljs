@@ -206,12 +206,32 @@
     (when identifier (swap! display-objects add-object identifier object))
     object))
 
+(defn- perform-query
+  "Takes a map from identifiers to lists of properties and returns a map with
+   the values of those properties (if there's only one object associated with
+   the provided identifier) or otherwise a map of lists of values."
+  [query]
+  (letfn [(get-values [objects property]
+            (if (= (count objects) 1)
+              (get-property (first objects) property)
+              (mapv #(get-property % property) objects)))]
+    (into {}
+          (for [[identifier properties] query]
+            (let [objects (@display-objects identifier)]
+              [identifier (into {}
+                                (for [property properties]
+                                  [property (get-values objects
+                                                        property)]))])))))
+
 (defn- event-callback
   "Returns a callback function to invoke when an input event occurs."
-  [event-name identifier object]
+  [event-name identifier object query]
   (fn [data]
-    (let [args {:topic event-name :data (js->clj data) :identifier identifier}]
+    (let [args {:topic event-name
+                :data (js->clj data)
+                :identifier identifier}]
       (put! event-channel
+            ;; Only include the transform if this object has a parent.
             (if (.-parent object)
               (assoc args :transform (.-worldTransform (.-parent object)))
               args)))))
@@ -255,8 +275,9 @@
     (doseq [recognizer events]
       (let [[event & {:as options}] recognizer
             Constructor (get-recognizer-constructor event)
-            event-name (get options "event" (name event))
-            callback (event-callback event-name identifier object)]
+            event-name (get options :event (name event))
+            query (get options :query [])
+            callback (event-callback event-name identifier object query)]
         (if Constructor
           (do (.add manager (Constructor. (clj->js options)))
               (.on manager event-name callback))

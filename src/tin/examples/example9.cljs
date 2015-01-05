@@ -22,7 +22,7 @@
 
 (def messages
   [[:load "resources/example9/orc.json"]
-   [:stage-update {:events [[:tap]]}]
+   [:stage-update {:events [[:tap :query {"player" [:position]}]]}]
    [:movie-clip "player" walk-right
     {:position [:point 100 100] :loop? true :animation-speed 0.2
      :scale [:point 5 5]}]
