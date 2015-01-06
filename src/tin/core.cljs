@@ -592,6 +592,8 @@
   [:text identifier message options]
   [:bitmap-text identifier message options]
   [:interactive-stage] ;; Requests to make the stage an interactive object.
+  [:listen target-identifier event-name query listener]
+  [:unlisten target-identifier event-name]
 
   ;; Texture expressions:
   [:image "path.png"]
@@ -610,9 +612,7 @@
   [:stop-clip frame?]
   [:update identifier properties :function function]
 
-  ;; Events:
-  ;; Specify a :events list as an option to any DisplayObject.
-  ;; Maps event identifiers to events. Valid recognizer expressions:
+  ;; Listener:
   [:pan :threshold 10]
   [:pinch :pointers 2]
   [:press :time 500]
