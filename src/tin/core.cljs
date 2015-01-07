@@ -119,6 +119,9 @@
      (str (first parts) (apply str (map clojure.string/capitalize
                                         (rest parts)))) "?" "")))
 
+
+
+
 (defn set-property!
   [object key value]
   (aset object (to-camelcase key) value))
@@ -241,6 +244,7 @@
   recognizer)"
   [name object callback]
   (case name
+    ; TODO support multiple callbacks
     :mouse-over (set! (.-mouseover object) callback)
     :mouse-out (set! (.-mouseout object) callback)
     :click-start (do (set! (.-mousedown object) callback)
@@ -282,6 +286,20 @@
           (do (.add manager (Constructor. (clj->js options)))
               (.on manager event-name callback))
           (add-standard-callback event object callback))))))
+
+(defn- add-event-handler!
+  "Adds an event handler with the provided name to the provided object."
+  [identifier object name event query]
+  (impersonate-dom-node! object)
+    (let [Manager (.-Manager js/Hammer)
+          manager (Manager. object)
+          [[event-name & {:as options}]] event
+          Constructor (get-recognizer-constructor event)
+          callback (event-callback name identifier object query)]
+      (if Constructor
+          (do (.add manager (name event-name) (Constructor. (clj->js options)))
+              (.on manager  callback))
+          (add-standard-callback event-name object callback))))
 
 (defn local-coordinates
   "Transforms a point from global window coordinates into the coordinate system
@@ -466,12 +484,15 @@
   (when (:events properties) (add-event-handlers! "@stage" @stage properties))
   (set-properties! @stage properties :function function))
 
-(defn- handle-stage-update
-  "Applies a property update to the global Stage object."
-  [[:stage-update properties & {:keys [function]
-                                :or {function overwrite}}]]
-  (when (:events properties) (add-event-handlers! "@stage" @stage properties))
-  (set-properties! @stage properties :function function))
+(defn handle-listen
+  "Handles the :listen message type."
+  [[:listen & {:keys [target name event query] :or {query {}}}]]
+  (doseq [object (@display-objects target)]
+    (add-event-handler! target object name event query)))
+
+(defn handle-unlisten
+  "Handles the :unlisten message type."
+  [[:unlisten & {:keys [target name]}]])
 
 (defn- handle-clear
   "Clears all values from the stage."
@@ -521,6 +542,8 @@
       :text (handle-text new-text message)
       :bitmap-text (handle-text new-bitmap-text message)
       :stage-update (handle-stage-update message)
+      :listen (handle-listen message)
+      :unlisten (handle-unlisten message)
       :clear (handle-clear message))
     message))
 
@@ -592,14 +615,13 @@
   [:text identifier message options]
   [:bitmap-text identifier message options]
   [:interactive-stage] ;; Requests to make the stage an interactive object.
-  [:listen target-identifier event-name query listener]
-  [:unlisten target-identifier event-name]
+  [:listen :target target :name name :query query :event event-expression]
+  [:unlisten :target target :name event-name]
 
   ;; Texture expressions:
   [:image "path.png"]
   [:canvas canvas-object]
   [:frame frame-id]
-
 
   ;; Actions:
   [:tween properties {:function f :duration d :ease e}]
@@ -612,7 +634,7 @@
   [:stop-clip frame?]
   [:update identifier properties :function function]
 
-  ;; Listener:
+  ;; Event expressions:
   [:pan :threshold 10]
   [:pinch :pointers 2]
   [:press :time 500]

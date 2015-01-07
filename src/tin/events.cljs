@@ -19,6 +19,7 @@
   "Gives a Pixi Sprite object just enough properties to pretend to be a DOM node
    so that hammer.js will be able to attach gesture recognizers to it."
   [object]
+  ;; TODO: Return if this has already been called
   (set! (.-interactive object) true)
   (set! (.-eventListeners object) {})
   (set! (.-ownerDocument object) (.-document js/window))
