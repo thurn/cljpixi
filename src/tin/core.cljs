@@ -120,7 +120,14 @@
                                         (rest parts)))) "?" "")))
 
 
-
+(defn objects-for-identifier
+  "Returns all display objets which match the provided identifier."
+  [identifier]
+  (letfn [(all-values [value] (if (map? value)
+                                (flatten (map all-values (vals value)))
+                                value))]
+    (all-values
+     (get-in @display-objects (clojure.string/split identifier #"/")))))
 
 (defn set-property!
   [object key value]
