@@ -119,17 +119,38 @@
      (str (first parts) (apply str (map clojure.string/capitalize
                                         (rest parts)))) "?" "")))
 
+(defn- look-up-identifier
+  "Looks up (via get-in) the objects under the provided identifier."
+  [identifier]
+  (get-in @display-objects (clojure.string/split identifier #"/")))
 
-(defn objects-for-identifier
+(defn- objects-for-identifier
   "Returns all display objets which match the provided identifier."
   [identifier]
-  (letfn [(all-values [value] (if (map? value)
-                                (flatten (map all-values (vals value)))
-                                value))]
-    (all-values
-     (get-in @display-objects (clojure.string/split identifier #"/")))))
+  (letfn [(all-values [value]
+            (if (map? value) (map all-values (vals value)) value))]
+    (flatten (all-values (look-up-identifier identifier)))))
 
-(defn set-property!
+(defn- set-object-for-identifier
+  "Looks up the value for the provided identifier, and then
+
+   - If there's no value: stores 'object' under this identifier as a new leaf
+     node.
+   - If the value is a map: adds 'object' as a leaf node under a numeric key
+     (the size of the map).
+   - Otherwise: creates a new map containing the previous object under this
+     identifier and 'object' under the keys '0' and '1' respectively as
+     leaf nodes.
+
+  It is an error to try to create a child path under an existing leaf node."
+  [object identifier]
+  (let [current-values (look-up-identifier identifier)]
+    (cond
+      (nil? current-values) ()
+      (map? current-values) (two)
+      :else (three))))
+
+(defn- set-property!
   [object key value]
   (aset object (to-camelcase key) value))
 
