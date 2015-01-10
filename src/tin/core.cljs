@@ -119,10 +119,15 @@
      (str (first parts) (apply str (map clojure.string/capitalize
                                         (rest parts)))) "?" "")))
 
-(defn- look-up-identifier
-  "Looks up (via get-in) the objects under the provided identifier."
+(defn- split-identifier
+  "Splits an identifier on slashes."
   [identifier]
-  (get-in @display-objects (clojure.string/split identifier #"/")))
+  (clojure.string/split identifier #"/"))
+
+(defn- look-up-identifier
+  "Looks up (via get-in) the value under the provided identifier."
+  [identifier]
+  (get-in @display-objects (split-identifier identifier)))
 
 (defn- objects-for-identifier
   "Returns all display objets which match the provided identifier."
@@ -138,17 +143,21 @@
      node.
    - If the value is a map: adds 'object' as a leaf node under a numeric key
      (the size of the map).
-   - Otherwise: creates a new map containing the previous object under this
-     identifier and 'object' under the keys '0' and '1' respectively as
-     leaf nodes.
+   - Otherwise, if the value is a leaf node: creates a new map containing the
+     previous object under this identifier and 'object' under the keys '0' and
+     '1' respectively.
 
   It is an error to try to create a child path under an existing leaf node."
   [object identifier]
-  (let [current-values (look-up-identifier identifier)]
+  (let [parts (split-identifier identifier)
+current-value (look-up-identifier identifier)]
     (cond
-      (nil? current-values) ()
-      (map? current-values) (two)
-      :else (three))))
+     (nil? current-value) (swap! display-objects assoc-in parts object)
+     (map? current-value) (swap! display-objects
+                                 assoc-in
+                                 (conj parts (str (count current-value)))
+                                 object)
+     :else (three))))
 
 (defn- set-property!
   [object key value]
