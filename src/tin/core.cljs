@@ -133,7 +133,7 @@
   "Returns all display objets which match the provided identifier."
   [identifier]
   (letfn [(all-values [value]
-            (if (map? value) (map all-values (vals value)) value))]
+            (if (map? value) (map all-values (vals value)) (list value)))]
     (flatten (all-values (look-up-identifier identifier)))))
 
 (defn- set-object-for-identifier
@@ -157,7 +157,8 @@ current-value (look-up-identifier identifier)]
                                  assoc-in
                                  (conj parts (str (count current-value)))
                                  object)
-     :else (three))))
+     :else (swap! display-objects assoc-in parts
+                  {"0" current-value, "1" object}))))
 
 (defn- set-property!
   [object key value]
