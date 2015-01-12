@@ -193,21 +193,21 @@ current-value (look-up-identifier identifier)]
   "Takes a two argument function and returns a function which will call
   value->expr on the *first* argument, but not the second, and will call
   expr->value on the result."
-  [function]
+  [context function]
   (fn [x y]
-    (expr->value (function (value->expr x) y))))
+    (expr->value context (function (value->expr x) y))))
 
 (defn- expr-wrap
   "Like expr-wrap-first, but applies value->expr on all arguments."
-  [function]
+  [context function]
   (fn [& args]
-    (expr->value (apply function (map value->expr args)))))
+    (expr->value context (apply function (map value->expr args)))))
 
 (defn- update-property!
   "Sets the property 'property' of object 'obj' to the value 'value', applying
    modification function 'function'."
-  [obj property value function]
-  (let [func (expr-wrap-first function)
+  [context obj property value function]
+  (let [func (expr-wrap-first context function)
         old (get-property obj property)
         new (func old value)]
     (set-property! obj property new)))
@@ -215,11 +215,11 @@ current-value (look-up-identifier identifier)]
 (defn- set-properties!
   "Set all of the properties in the provided properties map to be properties
   of the provided pixi.js object."
-  [object properties & {:keys [function] :or {function overwrite}}]
+  [context object properties & {:keys [function] :or {function overwrite}}]
   (doseq [[property value] (standard-properties properties)]
-    (update-property! object property value function))
+    (update-property! context object property value function))
   (doseq [[property value] (select-keys properties style-properties)]
-    (update-property! (.-style object) property value function)))
+    (update-property! context (.-style object) property value function)))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -240,7 +240,7 @@ current-value (look-up-identifier identifier)]
   "Adds a new child to the global Stage object, and stores the identifier for
   the object in the global display-objects map. Sets the properties
   from the provided properties map on the object. Returns object."
-  [object identifier properties]
+  [context object identifier properties]
   (letfn [(add-object [objects identifier value]
             (update-in objects [identifier] conj value))]
     (.addChild @stage object)
@@ -251,7 +251,7 @@ current-value (look-up-identifier identifier)]
   "Takes a map from identifiers to lists of properties and returns a map with
    the values of those properties (if there's only one object associated with
    the provided identifier) or otherwise a map of lists of values."
-  [query]
+  [context query]
   (letfn [(get-values [objects property]
             (if (= (count objects) 1)
               (get-property (first objects) property)
@@ -266,7 +266,7 @@ current-value (look-up-identifier identifier)]
 
 (defn- event-callback
   "Returns a callback function to invoke when an input event occurs."
-  [event-name identifier object query]
+  [context event-name identifier object query]
   (fn [data]
     (let [args {:topic event-name
                 :data (js->clj data)
@@ -280,7 +280,7 @@ current-value (look-up-identifier identifier)]
 (defn- add-standard-callback
   "Adds a standard callback to an object (one not based on a gesture
   recognizer)"
-  [name object callback]
+  [context name object callback]
   (case name
     ; TODO support multiple callbacks
     :mouse-over (set! (.-mouseover object) callback)
@@ -309,7 +309,7 @@ current-value (look-up-identifier identifier)]
 
 (defn- add-event-handlers!
   "Adds event handlers to the provided display object."
-  [identifier object properties]
+  [context identifier object properties]
   (impersonate-dom-node! object)
   (let [Manager (.-Manager js/Hammer)
         manager (Manager. object)
@@ -319,30 +319,31 @@ current-value (look-up-identifier identifier)]
             Constructor (get-recognizer-constructor event)
             event-name (get options :event (name event))
             query (get options :query [])
-            callback (event-callback event-name identifier object query)]
+            callback (event-callback context event-name identifier object
+                                     query)]
         (if Constructor
           (do (.add manager (Constructor. (clj->js options)))
               (.on manager event-name callback))
-          (add-standard-callback event object callback))))))
+          (add-standard-callback context event object callback))))))
 
 (defn- add-event-handler!
   "Adds an event handler with the provided name to the provided object."
-  [identifier object name event query]
+  [context identifier object name event query]
   (impersonate-dom-node! object)
     (let [Manager (.-Manager js/Hammer)
           manager (Manager. object)
           [[event-name & {:as options}]] event
           Constructor (get-recognizer-constructor event)
-          callback (event-callback name identifier object query)]
+          callback (event-callback context name identifier object query)]
       (if Constructor
           (do (.add manager (name event-name) (Constructor. (clj->js options)))
               (.on manager  callback))
-          (add-standard-callback event-name object callback))))
+          (add-standard-callback context event-name object callback))))
 
 (defn local-coordinates
   "Transforms a point from global window coordinates into the coordinate system
   of the provided transform object"
-  [[:point x y] transform]
+  [context [:point x y] transform]
   (let [InteractionData (.-InteractionData js/PIXI)
         tmp-data (InteractionData.)
         tmp-object (js* "{}")
@@ -355,7 +356,7 @@ current-value (look-up-identifier identifier)]
         global-y (* (- y (.-top bounds))
                     (/ (.-height (.-target interaction-manager))
                        (.-height bounds)))]
-    (set! (.-global tmp-data) (expr->value [:point global-x global-y]))
+    (set! (.-global tmp-data) (expr->value context [:point global-x global-y]))
     (set! (.-worldTransform tmp-object) transform)
     (value->expr (.getLocalPosition tmp-data tmp-object))))
 
@@ -372,75 +373,79 @@ current-value (look-up-identifier identifier)]
 
 (defn- handle-point
   "Instantiates and returns a new pixi.js Point from a message"
-  [[:point x y]]
+  [context [:point x y]]
   (new-point x y))
 
 (defn- handle-texture
   "Instantiates and returns a new pixi.js Texture from a message"
-  [[:texture [type argument] properties]]
+  [context [:texture [type argument] properties]]
   (let [texture
         (case type
           :image (image->texture argument)
           :frame (frame->texture argument)
           :canvas (canvas->texture argument))]
-    (set-properties! texture properties)
+    (set-properties! context texture properties)
     texture))
 
 (defn- handle-sprite
   "Instantiates and returns a new pixi.js Sprite, which is also immediately
   added as a child of the global stage."
-  [[:sprite identifier texture properties]]
-  (let [sprite (new-sprite (handle-message texture))]
+  [context [:sprite identifier texture properties]]
+  (let [sprite (new-sprite (handle-message context texture))]
     (when (:events properties)
-      (add-event-handlers! identifier sprite properties))
-    (set-properties! sprite properties)
-    (add-to-stage! sprite identifier properties)))
+      (add-event-handlers! context identifier sprite properties))
+    (set-properties! context sprite properties)
+    (add-to-stage! context sprite identifier properties)))
 
 (defn- handle-tiling-sprite
   "Instantiates and returns a new pixi.js TilingSprite, which is also
   immediately added as a child of the global stage."
-  [[:sprite identifier texture width height properties]]
-  (let [sprite (new-tiling-sprite (handle-message texture) width height)]
+  [context [:sprite identifier texture width height properties]]
+  (let [sprite (new-tiling-sprite (handle-message context texture)
+                                  width height)]
     (when (:events properties)
-      (add-event-handlers! identifier sprite properties))
-    (set-properties! sprite properties)
-    (add-to-stage! sprite identifier properties)))
+      (add-event-handlers! context identifier sprite properties))
+    (set-properties! context sprite properties)
+    (add-to-stage! context sprite identifier properties)))
 
 (defn- handle-text
   "Instantiates and returns a new pixi.js Text object, which is also immediately
   added as a child of the global stage."
-  [new-text-fn [_ identifier message properties]]
+  [context new-text-fn [_ identifier message properties]]
   (let [text (new-text-fn message)]
-    (when (:events properties) (add-event-handlers! identifier text properties))
-    (set-properties! text properties)
-    (add-to-stage! text identifier properties)))
+    (when (:events properties)
+      (add-event-handlers! context identifier text properties))
+    (set-properties! context text properties)
+    (add-to-stage! context text identifier properties)))
 
 (defn- handle-movie-clip
   "Instantiates a pixi.js MovieClip and adds it to the global stage."
-  [[:movie-clip identifier textures properties]]
-  (let [clip (new-movie-clip (clj->js (map handle-message textures)))]
-    (when (:events properties) (add-event-handlers! identifier clip properties))
-    (set-properties! clip properties)
-    (add-to-stage! clip identifier properties)))
+  [context [:movie-clip identifier textures properties]]
+  (let [clip (new-movie-clip (clj->js (map #(handle-message context %)
+                                           textures)))]
+    (when (:events properties)
+      (add-event-handlers! context identifier clip properties))
+    (set-properties! context clip properties)
+    (add-to-stage! context clip identifier properties)))
 
 (defn- handle-update
   "Updates the properties of an existing DisplayObject. Cannot be used to set
   user input functions."
-  [[:update identifier properties & {:keys [function]
-                                     :or {function overwrite}}]]
+  [context [:update identifier properties & {:keys [function]
+                                             :or {function overwrite}}]]
   (doseq [object (@display-objects identifier)]
-    (set-properties! object properties :function function)))
+    (set-properties! context object properties :function function)))
 
 (defn- handle-container
   "Instantiates and returns a new pixi.js DisplayObjectContainer, which will
   also be added as a child of the global stage."
-  [[:container identifier properties & children]]
+  [context [:container identifier properties & children]]
   (let [container (new-display-object-container)]
-    (dorun (map #(.addChild container (handle-message %)) children))
+    (dorun (map #(.addChild container (handle-message context %)) children))
     (when (:events properties)
-      (add-event-handlers! identifier container properties))
-    (set-properties! container properties)
-    (add-to-stage! container identifier properties)))
+      (add-event-handlers! context identifier container properties))
+    (set-properties! context container properties)
+    (add-to-stage! context container identifier properties)))
 
 (defn- new-tween
   "Returns a new Tween instance with the provided target object."
@@ -467,7 +472,7 @@ current-value (look-up-identifier identifier)]
   "Looks up the current value of each property on the provided object and
    constructs an animation target map by applying the provided binary function
    or functions to (current_value, map_value) to compute the final map value."
-  [object initial-map function-or-map]
+  [context object initial-map function-or-map]
   (letfn [(get-fn [property]
             (if (map? function-or-map)
               (get function-or-map property overwrite)
@@ -475,20 +480,23 @@ current-value (look-up-identifier identifier)]
     (into {}
           (for [[property value] initial-map
                 :let [original-value (get-property object property)
-                      function (expr-wrap-first (get-fn property))]]
+                      function (expr-wrap-first context (get-fn property))]]
             [(to-camelcase property) (function original-value value)]))))
 
 (defn- handle-tween-action
   "Handles the :tween action within an animation."
-  [the-tween object [:tween properties &
-                     {:keys [duration ease function]
-                      :or {duration 1000 ease (tin.ease/linear) function {}}}]]
-  (let [target-map (build-animation-target-map object properties function)]
+  [context the-tween object [:tween properties &
+                             {:keys [duration ease function]
+                              :or {duration 1000
+                                   ease (tin.ease/linear)
+                                   function {}}}]]
+  (let [target-map (build-animation-target-map context object properties
+                                               function)]
     (.to the-tween (clj->js target-map) duration ease)))
 
 (defn- handle-clip-action
   "Handles the :play-clip and :stop-clip actions within an animation."
-  [tween object [type frame]]
+  [context tween object [type frame]]
   (let [callback (fn [] (case type
                           :play-clip (if frame (.gotoAndPlay object frame)
                                          (.play object))
@@ -499,42 +507,43 @@ current-value (look-up-identifier identifier)]
 (defn- handle-default-action
   "Handles the default action inside an animation, which queues a new message
    in the animation."
-  [tween object message]
-  (.call tween #(handle-message message)))
+  [context tween object message]
+  (.call tween #(handle-message context message)))
 
 (defn- handle-animation
   "Creates a new TweenJS Tween object for each object with the provided
    identifier and queues animation actions on it."
-  [[:animation identifier options & actions]]
+  [context [:animation identifier options & actions]]
   (doseq [object (@display-objects identifier ())]
     (let [tween (new-tween object options)]
       (doseq [action actions]
         (case (first action)
-          :tween (handle-tween-action tween object action)
-          :play-clip (handle-clip-action tween object action)
-          :stop-clip (handle-clip-action tween object action)
-          (handle-default-action tween object action))))))
+          :tween (handle-tween-action context tween object action)
+          :play-clip (handle-clip-action context tween object action)
+          :stop-clip (handle-clip-action context tween object action)
+          (handle-default-action context tween object action))))))
 
 (defn- handle-stage-update
   "Applies a property update to the global Stage object."
-  [[:stage-update properties & {:keys [function]
-                                :or {function overwrite}}]]
-  (when (:events properties) (add-event-handlers! "@stage" @stage properties))
-  (set-properties! @stage properties :function function))
+  [context [:stage-update properties & {:keys [function]
+                                        :or {function overwrite}}]]
+  (when (:events properties)
+    (add-event-handlers! context "@stage" @stage properties))
+  (set-properties! context @stage properties :function function))
 
 (defn handle-listen
   "Handles the :listen message type."
-  [[:listen & {:keys [target name event query] :or {query {}}}]]
+  [context [:listen & {:keys [target name event query] :or {query {}}}]]
   (doseq [object (@display-objects target)]
-    (add-event-handler! target object name event query)))
+    (add-event-handler! context target object name event query)))
 
 (defn handle-unlisten
   "Handles the :unlisten message type."
-  [[:unlisten & {:keys [target name]}]])
+  [context [:unlisten & {:keys [target name]}]])
 
 (defn- handle-clear
   "Clears all values from the stage."
-  [[:clear]]
+  [context [:clear]]
   (while (> (.-length (.-children @stage)) 0)
     (.removeChild @stage (aget (.-children @stage) 0)))
   (reset! display-objects {}))
@@ -555,41 +564,41 @@ current-value (look-up-identifier identifier)]
 (defn- expr->value
   "Returns a Pixi.js object based on the provided value message, or returns the
   input unchanged if it was a primitive (non-sequential) value."
-  [message]
+  [context message]
   (if (sequential? message)
     (case (first message)
-      :point (handle-point message)
-      :texture (handle-texture message)
-      (to-array (map expr->value message)))
+      :point (handle-point context message)
+      :texture (handle-texture context message)
+      (to-array (map #(expr->value context %) message)))
     message))
 
 ;; dispatch?
 (defn- handle-message
   "Parses the provided message and renders the contents to the canvas."
-  [message]
+  [context message]
   (if (sequential? message)
     (case (first message)
-      :point (handle-point message)
-      :texture (handle-texture message)
-      :sprite (handle-sprite message)
-      :tiling-sprite (handle-tiling-sprite message)
-      :movie-clip (handle-movie-clip message)
-      :update (handle-update message)
-      :container (handle-container message)
-      :animation (handle-animation message)
-      :text (handle-text new-text message)
-      :bitmap-text (handle-text new-bitmap-text message)
-      :stage-update (handle-stage-update message)
-      :listen (handle-listen message)
-      :unlisten (handle-unlisten message)
-      :clear (handle-clear message))
+      :point (handle-point context message)
+      :texture (handle-texture context message)
+      :sprite (handle-sprite context message)
+      :tiling-sprite (handle-tiling-sprite context message)
+      :movie-clip (handle-movie-clip context message)
+      :update (handle-update context message)
+      :container (handle-container context message)
+      :animation (handle-animation context message)
+      :text (handle-text context new-text message)
+      :bitmap-text (handle-text context new-bitmap-text message)
+      :stage-update (handle-stage-update context message)
+      :listen (handle-listen context message)
+      :unlisten (handle-unlisten context message)
+      :clear (handle-clear context message))
     message))
 
 (defn- load-assets
   "Loads assets with the provided paths by inspecting their file extensions.
   Returns a channel which will have the message :loaded put! onto it once
   the asset loading is completed."
-  [[:load & assets]]
+  [context [:load & assets]]
   (let [result-channel (chan)
         loader (new-asset-loader (to-array assets))]
     (.addEventListener loader "onComplete" #(put! result-channel :loaded))
@@ -616,12 +625,13 @@ current-value (look-up-identifier identifier)]
   (js/requestAnimFrame animate-loop)
   (let [render-channel (chan channel-buffer-size)
         input-channel (chan channel-buffer-size)
-        view (.-view @renderer)]
+        view (.-view @renderer)
+        context {}]
     ;; TODO: Load messages in batches to allow incremental rendering
     (go (loop [[type & _ :as message] (<! render-channel)]
           (if (= type :load)
-            (<! (load-assets message))  ; Block until assets are loaded.
-            (handle-message message))
+            (<! (load-assets context message))  ; Block until assets are loaded.
+            (handle-message context message))
           (recur (<! render-channel))))
     {:view view :render render-channel :input input-channel}))
 
