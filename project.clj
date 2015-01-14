@@ -4,12 +4,15 @@
                  [org.clojure/clojurescript "0.0-2311"
                   :exclusions [org.apache.ant/ant]]
                  [org.clojure/core.match "0.2.1"]
-                 [org.clojure/core.async "0.1.338.0-5c5012-alpha"]]
+                 [org.clojure/core.async "0.1.338.0-5c5012-alpha"]
+                 [com.cemerick/piggieback "0.1.3"]]
   :license {:name "Creative Commons Zero"
             :url "https://creativecommons.org/publicdomain/zero/1.0/legalcode"}
   :source-paths ["src"]
   :plugins [[lein-cljsbuild "1.0.4-SNAPSHOT"]
-            [cider/cider-nrepl "0.7.0"]]
+            [cider/cider-nrepl "0.7.0"]
+            [com.cemerick/austin "0.1.5"]]
+  :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
   :cljsbuild {
     :builds [{:id "tin"
               :source-paths ["src"]
