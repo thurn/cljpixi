@@ -29,7 +29,7 @@
   (Engine. stage renderer display-objects event-channel render-channel view))
 
 (defrecord EngineConfiguration
-  [width height background-color view transparent? antialias?])
+  [width height background-color view transparent? antialias? interactive?])
 
 (defn new-engine-configuration
   "Constructor function for the EngineConfiguration record type. Keys:
@@ -39,10 +39,30 @@
     - background-color: Default color for the canvas. Default: 0xFFFFFF.
     - view: Optionally, a canvas node for the renderer to draw to.
     - transparent?: Set to true to make the rendered view transparent.
-    - antialias?: Set to true to render with antialiasing (Chrome-only)."
-  [& {:keys [width height background-color view transparent? antialias?]}]
-  (EngineConfiguration. width height background-color view transparent?
-                        antialias))
+    - antialias?: Set to true to render with antialiasing (Chrome-only).
+    - interactive?: Whether the stage should process user input events.
+      Default: true."
+  [& {:keys [width height background-color view transparent? antialias?
+             interactive?]}]
+  (EngineConfiguration. (or width 500) (or height 500)
+                        (or background-color 0xFFFFFF) view transparent?
+                        antialias? (or interactive? true)))
+
+(def ^:private last-timestamp
+  "The relative timestamp at which the animate loop last ran."
+  (atom nil))
+
+(defn- animate-loop
+  "Invokes an animation loop function repeatedly via requestAnimationFrame."
+  [stage renderer]
+  (defn- animate-loop-fn [timestamp]
+    (js/requestAnimFrame animate-loop-fn)
+    (.tick (.-Tween js/createjs)
+           (- timestamp (or @last-timestamp timestamp))
+           false)                       ; Is globally paused?
+    (.render renderer stage)
+    (reset! last-timestamp timestamp))
+  (js/requestAnimFrame animate-loop-fn))
 
 (defn initialize
   "Takes an EngineConfiguration and creates a new Engine instance. You should
@@ -51,4 +71,11 @@
   otherwise, a new one will be instantiated, returned, and must be added to
   the DOM. Refer to the documentation for Engine and EngineConfiguration for
   more information."
-  [engine-configuration])
+  [config]
+  (tin.tween-plugin/install-tween-plugin)
+  (let [Stage (.-Stage js/PIXI)
+        stage (Stage. (:background-color config) (:interactive? config))
+        renderer (.autoDetectRenderer js/PIXI (:width config) (:height config)
+                                      (:view config) (:transparent? config)
+                                      (:antialias? config))]
+    (animate-loop stage renderer)))

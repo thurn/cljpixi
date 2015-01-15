@@ -26,5 +26,4 @@
   "tween" tween))
 
 (defn install-tween-plugin []
-  (prn "install-tween-plugin")
   (.installPlugin (.-Tween js/createjs) TweenPlugin tween-properties))
