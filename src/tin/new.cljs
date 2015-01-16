@@ -7,9 +7,11 @@
    [clojure.string]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
                             alts! timeout pub]]
-   [cljs.core.match]))
+   [cljs.core.match] :refer [match]))
 
 (enable-console-print!)
+
+(def ^:private channel-buffer-size 65536)
 
 (defrecord Engine
   [stage renderer display-objects event-channel render-channel view])
@@ -24,9 +26,13 @@
     - event-channel: The channel on which all user input events are published.
     - render-channel: The cannel onto which rendering messages should be
       published.
-    - view: The canvas DOM node which the renderer will draw to."
-  [& {:keys [stage renderer display-objects event-channel render-channel view]}]
-  (Engine. stage renderer display-objects event-channel render-channel view))
+    - view: The canvas DOM node which the renderer will draw to.
+    - dispatch-map: A map used to process incoming render channel messages,
+      mapping the initial keyword in the message to a processing function."
+  [& {:keys [stage renderer display-objects event-channel render-channel view
+             dispatch-map]}]
+  (Engine. stage renderer display-objects event-channel render-channel view
+           dispatch-map))
 
 (defrecord EngineConfiguration
   [width height background-color view transparent? antialias? interactive?])
@@ -54,15 +60,24 @@
 
 (defn- animate-loop
   "Invokes an animation loop function repeatedly via requestAnimationFrame."
-  [stage renderer]
+  [engine]
   (defn- animate-loop-fn [timestamp]
     (js/requestAnimFrame animate-loop-fn)
     (.tick (.-Tween js/createjs)
-           (- timestamp (or @last-timestamp timestamp))
-           false)                       ; Is globally paused?
-    (.render renderer stage)
+           (- timestamp (or @last-timestamp timestamp)))
+    (.render (:renderer engine) (:stage engine))
     (reset! last-timestamp timestamp))
   (js/requestAnimFrame animate-loop-fn))
+
+(defn render-message-loop
+  [{:as engine render-channel :render-channel dispatch-map :dispatch-map}]
+  (go
+    (loop [message (<! render-channel)]
+      (let [result ((dispatch-map (first message)) engine message)]
+        (match result
+               {:chan chan} (<! chan)
+               :else nil)
+        (recur (<! render-channel))))))
 
 (defn initialize
   "Takes an EngineConfiguration and creates a new Engine instance. You should
@@ -77,5 +92,11 @@
         stage (Stage. (:background-color config) (:interactive? config))
         renderer (.autoDetectRenderer js/PIXI (:width config) (:height config)
                                       (:view config) (:transparent? config)
-                                      (:antialias? config))]
-    (animate-loop stage renderer)))
+                                      (:antialias? config))
+        engine (new-engine :stage stage :renderer renderer :display-objects {}
+                           :event-channel (chan channel-buffer-size)
+                           :render-channel (chan channel-buffer-size)
+                           :view (.-view renderer))]
+    (animate-loop engine)
+    (render-message-loop engine)
+    engine))
