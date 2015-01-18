@@ -154,15 +154,24 @@
 
 ;;;;; Render Message ;;;;;
 
-(defn- handle-object-expression
-  [object-expr])
+(defn- expression->object
+  ([expression] (expression->object expression nil))
+  ([expression display-objects]
+     (case (first expression)
+       :container (new-container display-objects expression)
+       :sprite (new-sprite display-objects expression)
+       :tiling-sprite (new-tiling-sprite display-objects expression)
+       :movie-clip (new-movie-clip display-objects expression)
+       :point (new-point expression)
+       :texture (new-texture expression))))
 
 (defn- handle-render-message
+  "Processes the :render message by creating the requested display objects and
+  adding them to the Stage and to the display-objects tree."
   [{stage :stage display-objects :display-objects} [:render & object-exprs]]
   (doseq [[type identifier & _ :as object-expr] object-exprs
-          :let object (handle-object-expression object-expr)]
-    (.addChild stage object)
-    (set-object-for-identifier! display-objects object identifier)))
+          :let object (expression->object object-expr display-objects)]
+    (.addChild stage object)))
 
 ;;;;; Update Message ;;;;;
 
