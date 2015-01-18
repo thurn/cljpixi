@@ -26,13 +26,9 @@
     - event-channel: The channel on which all user input events are published.
     - render-channel: The cannel onto which rendering messages should be
       published.
-    - view: The canvas DOM node which the renderer will draw to.
-    - dispatch-map: A map used to process incoming render channel messages,
-      mapping the initial keyword in the message to a processing function."
-  [& {:keys [stage renderer display-objects event-channel render-channel view
-             dispatch-map]}]
-  (Engine. stage renderer display-objects event-channel render-channel view
-           dispatch-map))
+    - view: The canvas DOM node which the renderer will draw to."
+  [& {:keys [stage renderer display-objects event-channel render-channel view]}]
+  (Engine. stage renderer display-objects event-channel render-channel view))
 
 (defrecord EngineConfiguration
   [width height background-color view transparent? antialias? interactive?])
@@ -92,7 +88,8 @@
         renderer (.autoDetectRenderer js/PIXI (:width config) (:height config)
                                       (:view config) (:transparent? config)
                                       (:antialias? config))
-        engine (new-engine :stage stage :renderer renderer :display-objects {}
+        engine (new-engine :stage stage :renderer renderer
+                           :display-objects (atom {})
                            :event-channel (chan channel-buffer-size)
                            :render-channel (chan channel-buffer-size)
                            :view (.-view renderer))]
@@ -100,11 +97,117 @@
     (render-message-loop engine)
     engine))
 
+(defn overwrite
+  "Default update function for :update and :tween, overwrites the existing value
+  with the new value."
+  [& args]
+  (last args))
+
+(defn- to-camelcase
+  "Converts a dash-separated string to camelCase and strips ? characters."
+  [string]
+  (let [parts (clojure.string/split (name string) #"-")]
+    (clojure.string/replace
+     (str (first parts) (apply str (map clojure.string/capitalize
+                                        (rest parts)))) "?" "")))
+
+(defn- split-identifier
+  "Splits an identifier on slashes."
+  [identifier]
+  (clojure.string/split identifier #"/"))
+
+(defn- look-up-identifier
+  "Looks up (via get-in) the value under the provided identifier."
+  [display-objects identifier]
+  (get-in display-objects (split-identifier identifier)))
+
+(defn- objects-for-identifier
+  "Returns all display objets which match the provided identifier."
+  [display-objects identifier]
+  (letfn [(all-values [value]
+            (if (map? value) (map all-values (vals value)) (list value)))]
+    (flatten (all-values (look-up-identifier display-objects identifier)))))
+
+(defn- set-object-for-identifier!
+  "Looks up the value for the provided identifier, and then
+
+   - If there's no value: stores 'object' under this identifier as a new leaf
+     node.
+   - If the value is a map: adds 'object' as a leaf node under a numeric key
+     (the size of the map).
+   - Otherwise, if the value is a leaf node: creates a new map containing the
+     previous object under this identifier and 'object' under the keys '0' and
+     '1' respectively.
+
+  It is an error to try to create a child path under an existing leaf node."
+  [display-objects object identifier]
+  (let [parts (split-identifier identifier)
+        current-value (look-up-identifier display-objects identifier)]
+    (cond
+     (nil? current-value) (swap! display-objects assoc-in parts object)
+     (map? current-value) (swap! display-objects
+                                 assoc-in
+                                 (conj parts (str (count current-value)))
+                                 object)
+     :else (swap! display-objects assoc-in parts
+                  {"0" current-value, "1" object}))))
+
+;;;;; Render Message ;;;;;
+
+(defn- handle-object-expression
+  [object-expr])
+
+(defn- handle-render-message
+  [{stage :stage display-objects :display-objects} [:render & object-exprs]]
+  (doseq [[type identifier & _ :as object-expr] object-exprs
+          :let object (handle-object-expression object-expr)]
+    (.addChild stage object)
+    (set-object-for-identifier! display-objects object identifier)))
+
+;;;;; Update Message ;;;;;
+
+(defn- handle-update-message
+  [engine [:update identifier properties &
+           {:keys [function] :or {function overwrite}}]])
+
+;;;;; Load Message ;;;;;
+
+(defn- handle-load-message
+  [engine [:load identifier & assets]])
+
+;;;;; Animate Message ;;;;;
+
+(defn- handle-animate-message
+  [engine [:animate & animation-exprs]])
+
+;;;;; Subscribe/Unsubscribe Messages ;;;;;
+
+(defn- handle-subscribe-message
+  [engine [:subscribe source & {:keys [to query event]}]])
+
+(defn- handle-unsubscribe-message
+  [engine [:unsubscribe source & {:keys [from]}]])
+
+;;;;; Clear Message ;;;;;
+
+(defn- handle-clear-message
+  [engine [:clear]])
+
+;;;;; Message Dispatch ;;;;;
+
 (defn- handle-message
   "Process a render message by dispatching to the appropriate handler function.
    A handler can optionally return a chan object, if one is returned message
    processing will be halted until a read on the channel completes."
-  [engine message])
+  [engine message]
+  (case (first message)
+    :render (handle-render-message engine message)
+    :update (handle-update-message engine message)
+    :load (handle-load-message engine message)
+    :animate (handle-animate-message engine message)
+    :subscribe (handle-subscribe-message engine message)
+    :unsubscribe (handle-unsubscribe-message engine message)
+    :clear (handle-clear-message engine message)))
 
 (comment
   ; Top-level messages:
