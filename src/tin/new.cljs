@@ -141,18 +141,60 @@
 
   It is an error to try to create a child path under an existing leaf node."
   [display-objects object identifier]
-  (let [parts (split-identifier identifier)
-        current-value (look-up-identifier display-objects identifier)]
-    (cond
-     (nil? current-value) (swap! display-objects assoc-in parts object)
-     (map? current-value) (swap! display-objects
-                                 assoc-in
-                                 (conj parts (str (count current-value)))
-                                 object)
-     :else (swap! display-objects assoc-in parts
-                  {"0" current-value, "1" object}))))
+  (when display-objects
+    (let [parts (split-identifier identifier)
+          current-value (look-up-identifier display-objects identifier)]
+      (cond
+       (nil? current-value) (swap! display-objects assoc-in parts object)
+       (map? current-value) (swap! display-objects
+                                   assoc-in
+                                   (conj parts (str (count current-value)))
+                                   object)
+       :else (swap! display-objects assoc-in parts
+                    {"0" current-value, "1" object})))))
 
 ;;;;; Render Message ;;;;;
+
+(defn- get-property
+  [object property])
+
+(defn- update-property!
+  [object key value function])
+
+(defn- update-properties!
+  "Set all of the properties in the provided properties map to be properties
+  of the provided pixi.js object."
+  [object properties])
+
+(defn- new-container
+  [display-objects [:container identifier properties & children]]
+  (let [DisplayObjectContainer (.-DisplayObjectContainer js/PIXI)
+        container (DisplayObjectContainer.)]
+    (doseq [child children]
+      (.addChild container (expression->object child display-objects)))
+    (update-properties! container properties)
+    (set-object-for-identifier! display-objects container identifier)
+    container))
+
+(defn- new-sprite
+  [display-objects [:sprite identifier texture properties]]
+  (let [Sprite (.-Sprite js/PIXI)]))
+
+(defn- new-tiling-sprite
+  [display-objects [:tiling-sprite identifier texture width height properties]]
+  (let [TilingSprite (.-TilingSprite js/PIXI)]))
+
+(defn- new-movie-clip
+  [display-objects [:movie-clip identifier textures properties]]
+  (let [MovieClip (.-MovieClip js/PIXI)]))
+
+(defn- new-point
+  [[:point x y]]
+  (let [Point (.-Point js/PIXI)]))
+
+(defn- new-texture
+  [[:texture type argument]]
+  (let [Texture (.-Texture js/PIXI)]))
 
 (defn- expression->object
   ([expression] (expression->object expression nil))
@@ -164,6 +206,17 @@
        :movie-clip (new-movie-clip display-objects expression)
        :point (new-point expression)
        :texture (new-texture expression))))
+
+(defn- object->expression
+  "Turns the provided Pixi.js object into an expression (if possible)."
+  [object]
+  (cond
+   (instance? (.-Point js/PIXI) object) [:point (.-x object) (.-y object)]
+   :otherwise object))
+
+(defn- expression-lift
+  [function]
+  )
 
 (defn- handle-render-message
   "Processes the :render message by creating the requested display objects and
@@ -236,10 +289,10 @@
   [:clear]
 
   ; Object expressions
-  [:container identifier options & children]
-  [:sprite identifier texture options]
-  [:tiling-sprite identifier texture width height options]
-  [:movie-clip identifier textures options]
+  [:container identifier properties & children]
+  [:sprite identifier texture properties]
+  [:tiling-sprite identifier texture width height properties]
+  [:movie-clip identifier textures properties]
   [:point x y]
   [:texture :image path]
   [:texture :canvas canvas]
