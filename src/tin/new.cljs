@@ -10,8 +10,9 @@
    [cljs.core.match] :refer [match]))
 
 (enable-console-print!)
-
 (def ^:private channel-buffer-size 65536)
+
+;;;;; API ;;;;;
 
 (defrecord Engine
   [stage renderer display-objects event-channel render-channel view])
@@ -67,7 +68,7 @@
 
 (declare handle-message)
 
-(defn render-message-loop
+(defn- render-message-loop
   [{:as engine render-channel :render-channel dispatch-map :dispatch-map}]
   (go ;; TODO: Process messages in batches.
     (loop [message (<! render-channel)]
@@ -97,6 +98,8 @@
     (render-message-loop engine)
     engine))
 
+;;;;; Helper Functions ;;;;;
+
 (defn overwrite
   "Default update function for :update and :tween, overwrites the existing value
   with the new value."
@@ -104,12 +107,14 @@
   (last args))
 
 (defn- to-camelcase
-  "Converts a dash-separated string to camelCase and strips ? characters."
+  "Converts a dash-separated |string| to camelCase and strips ? characters."
   [string]
   (let [parts (clojure.string/split (name string) #"-")]
     (clojure.string/replace
      (str (first parts) (apply str (map clojure.string/capitalize
                                         (rest parts)))) "?" "")))
+
+;;;;; Identifiers ;;;;;
 
 (defn- split-identifier
   "Splits an identifier on slashes."
@@ -117,26 +122,26 @@
   (clojure.string/split identifier #"/"))
 
 (defn- look-up-identifier
-  "Looks up (via get-in) the value under the provided identifier."
+  "Looks up (via get-in) the value under |identifier|."
   [display-objects identifier]
   (get-in display-objects (split-identifier identifier)))
 
 (defn- objects-for-identifier
-  "Returns all display objets which match the provided identifier."
+  "Returns all display objets which match |identifier|."
   [display-objects identifier]
   (letfn [(all-values [value]
             (if (map? value) (map all-values (vals value)) (list value)))]
     (flatten (all-values (look-up-identifier display-objects identifier)))))
 
 (defn- set-object-for-identifier!
-  "Looks up the value for the provided identifier, and then
+  "Looks up the value for |identifier|, and then
 
-   - If there's no value: stores 'object' under this identifier as a new leaf
+   - If there's no value: stores |object| under this identifier as a new leaf
      node.
-   - If the value is a map: adds 'object' as a leaf node under a numeric key
+   - If the value is a map: adds |object| as a leaf node under a numeric key
      (the size of the map).
    - Otherwise, if the value is a leaf node: creates a new map containing the
-     previous object under this identifier and 'object' under the keys '0' and
+     previous object under this identifier and |object| under the keys '0' and
      '1' respectively.
 
   It is an error to try to create a child path under an existing leaf node."
@@ -155,46 +160,79 @@
 
 ;;;;; Render Message ;;;;;
 
+(declare expression-lift)
+
 (defn- get-property
-  [object property])
+  "Gets the property named |key| from |object|."
+  [object key]
+  (aget object (to-camelcase key)))
 
 (defn- update-property!
-  [object key value function])
+  "Sets the value of a property to (|function| old-value |value|) where
+  old-value is the current value of the property. If the result is a clojure map
+  object, the update is instead recursively applied to each child of the
+  property."
+  [object key value function]
+  (let [lifted-fn (expression-lift function)
+        old-val (get-property object key)
+        new-val (lifted-fn old-val value)]
+    (if (map? new-val)
+      (doseq [[key value] new-val]
+        (update-property! (get-property object key) key value))
+      (aset object (to-camelcase key) new-val))))
 
 (defn- update-properties!
-  "Set all of the properties in the provided properties map to be properties
-  of the provided pixi.js object."
-  [object properties])
+  "Set all of the properties in |properties| to be properties
+  of |object|. |function| will be passed along to update-property!. Returns
+  |object|."
+  [object properties & {:keys [function] : or {function overwrite}}]
+  (doseq [[key value] properties]
+    (update-property! object key value function))
+  object)
 
 (defn- new-container
+  "Instantiates and returns a new PIXI.DisplayObjectContainer object."
   [display-objects [:container identifier properties & children]]
   (let [DisplayObjectContainer (.-DisplayObjectContainer js/PIXI)
         container (DisplayObjectContainer.)]
     (doseq [child children]
       (.addChild container (expression->object child display-objects)))
-    (update-properties! container properties)
     (set-object-for-identifier! display-objects container identifier)
-    container))
+    (update-properties! container properties)))
 
 (defn- new-sprite
   [display-objects [:sprite identifier texture properties]]
-  (let [Sprite (.-Sprite js/PIXI)]))
+  (let [Sprite (.-Sprite js/PIXI)
+        sprite (Sprite. (new-texture texture))]
+    (set-object-for-identifier! display-objects sprite identifier)
+    (update-properties! sprite properties)))
 
 (defn- new-tiling-sprite
   [display-objects [:tiling-sprite identifier texture width height properties]]
-  (let [TilingSprite (.-TilingSprite js/PIXI)]))
+  (let [TilingSprite (.-TilingSprite js/PIXI)
+        tiling-sprite (TilingSprite. (new-texture texture) width height)]
+    (set-object-for-identifier! display-objects tiling-sprite identifier)
+    (update-properties! tiling-sprite properties)))
 
 (defn- new-movie-clip
   [display-objects [:movie-clip identifier textures properties]]
-  (let [MovieClip (.-MovieClip js/PIXI)]))
+  (let [MovieClip (.-MovieClip js/PIXI)
+        movie-clip (MovieClip. (to-array (map new-texture textures)))]
+    (set-object-for-identifier! display-objects movie-clip identifier)
+    (update-properties! movie-clip properties)))
 
 (defn- new-point
   [[:point x y]]
-  (let [Point (.-Point js/PIXI)]))
+  (let [Point (.-Point js/PIXI)]
+    (Point. x y)))
 
 (defn- new-texture
   [[:texture type argument]]
-  (let [Texture (.-Texture js/PIXI)]))
+  (let [Texture (.-Texture js/PIXI)]
+    (case type
+      :image (.fromImage Texture argument)
+      :frame (.fromFrame Texture argument)
+      :canvas (.fromCanvas Texture argument))))
 
 (defn- expression->object
   ([expression] (expression->object expression nil))
@@ -207,16 +245,31 @@
        :point (new-point expression)
        :texture (new-texture expression))))
 
+(defn- to-object
+  "Turns |value| into a Pixi.js object on a best-effort basis. A vector argument
+  will either be treated as an expression (if the first element is a keyword) or
+  will be recursively converted to objects."
+  [value]
+  (if (vector? value)
+    (if (keyword? (first value))
+      (expression->object value)
+      (to-array (map to-object value)))
+    value))
+
 (defn- object->expression
-  "Turns the provided Pixi.js object into an expression (if possible)."
+  "Turns |object| into an expression (if possible)."
   [object]
   (cond
    (instance? (.-Point js/PIXI) object) [:point (.-x object) (.-y object)]
    :otherwise object))
 
 (defn- expression-lift
+  "Wraps |function| in another function which will convert its arguments to
+  expressions, call the function, and then convert the result into a Pixi
+  object."
   [function]
-  )
+  (fn [& args]
+    (to-object (apply function (map object->expression args)))))
 
 (defn- handle-render-message
   "Processes the :render message by creating the requested display objects and
@@ -258,9 +311,9 @@
 ;;;;; Message Dispatch ;;;;;
 
 (defn- handle-message
-  "Process a render message by dispatching to the appropriate handler function.
-   A handler can optionally return a chan object, if one is returned message
-   processing will be halted until a read on the channel completes."
+  "Process a render channel message by dispatching to the appropriate handler
+  function. A handler can optionally return a chan object, if one is returned
+  message processing will be halted until a read on the channel completes."
   [engine message]
   (case (first message)
     :render (handle-render-message engine message)
