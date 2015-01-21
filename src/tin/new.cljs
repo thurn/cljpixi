@@ -1,4 +1,4 @@
-(ns tin.core
+(ns tin.new
   (:require
    [tin.ease]
    [tin.tween-plugin]
@@ -6,8 +6,9 @@
    [clojure.set :refer [union]]
    [clojure.string]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
-                            alts! timeout pub]]
-   [cljs.core.match] :refer [match]))
+                            alts! timeout pub]])
+  (:require-macros [cljs.core.async.macros :refer [go]]
+                   [cljs.core.match.macros :refer [match]]))
 
 (enable-console-print!)
 (def ^:private channel-buffer-size 65536)
@@ -98,7 +99,19 @@
     (render-message-loop engine)
     engine))
 
+(defn put-messages!
+  "Puts the messages from |messages| onto |engine|'s render channel."
+  [engine messages]
+  (dorun (map #(put! (:render-channel engine) %) messages)))
+
 ;;;;; Helper Functions ;;;;;
+
+(defn point-binary-function
+  "Takes a binary function and returns a function which will apply it to
+  both components of two [:point x y] expressions and return a new [:point]."
+  [binary-function]
+  (fn [[:point old-x old-y] [:point new-x new-y]]
+    [:point (binary-function old-x new-x) (binary-function old-y new-y)]))
 
 (defn overwrite
   "Default update function for :update and :tween, overwrites the existing value
@@ -106,7 +119,7 @@
   [& args]
   (last args))
 
-(defn- to-camelcase
+(defn to-camelcase
   "Converts a dash-separated |string| to camelCase and strips ? characters."
   [string]
   (let [parts (clojure.string/split (name string) #"-")]
@@ -161,6 +174,7 @@
 ;;;;; Render Message ;;;;;
 
 (declare expression-lift)
+(declare expression->object)
 
 (defn- get-property
   "Gets the property named |key| from |object|."
@@ -185,10 +199,23 @@
   "Set all of the properties in |properties| to be properties
   of |object|. |function| will be passed along to update-property!. Returns
   |object|."
-  [object properties & {:keys [function] : or {function overwrite}}]
+  [object properties & {:keys [function] :or {function overwrite}}]
   (doseq [[key value] properties]
     (update-property! object key value function))
   object)
+
+(defn- new-point
+  [[:point x y]]
+  (let [Point (.-Point js/PIXI)]
+    (Point. x y)))
+
+(defn- new-texture
+  [[:texture type argument]]
+  (let [Texture (.-Texture js/PIXI)]
+    (case type
+      :image (.fromImage Texture argument)
+      :frame (.fromFrame Texture argument)
+      :canvas (.fromCanvas Texture argument))))
 
 (defn- new-container
   "Instantiates and returns a new PIXI.DisplayObjectContainer object."
@@ -220,19 +247,6 @@
         movie-clip (MovieClip. (to-array (map new-texture textures)))]
     (set-object-for-identifier! display-objects movie-clip identifier)
     (update-properties! movie-clip properties)))
-
-(defn- new-point
-  [[:point x y]]
-  (let [Point (.-Point js/PIXI)]
-    (Point. x y)))
-
-(defn- new-texture
-  [[:texture type argument]]
-  (let [Texture (.-Texture js/PIXI)]
-    (case type
-      :image (.fromImage Texture argument)
-      :frame (.fromFrame Texture argument)
-      :canvas (.fromCanvas Texture argument))))
 
 (defn- expression->object
   ([expression] (expression->object expression nil))
@@ -276,7 +290,7 @@
   adding them to the Stage and to the display-objects tree."
   [{stage :stage display-objects :display-objects} [:render & object-exprs]]
   (doseq [[type identifier & _ :as object-expr] object-exprs
-          :let object (expression->object object-expr display-objects)]
+          :let [object (expression->object object-expr display-objects)]]
     (.addChild stage object)))
 
 ;;;;; Update Message ;;;;;

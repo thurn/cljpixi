@@ -25,6 +25,6 @@
       (let [{{{center-x "x" center-y "y"} "center"} :data
              transform :transform
              identifier :identifier} (<! pan-channel)
-             coordinates (local-coordinates
+             coordinates (local-coordinates nil
                           [:point center-x center-y] transform)]
         (>! render-channel [:update identifier {:position coordinates}])))))
