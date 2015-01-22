@@ -15,22 +15,22 @@
 
 ;;;;; API ;;;;;
 
-(defrecord Engine
+(defrecord EngineState
   [stage renderer display-objects event-channel render-channel view])
 
-(defn new-engine
-  "Constructor function for the Engine record type. Keys:
+(defn- new-engine-state
+  "Constructor function for the internal EngineState record type. Keys:
 
     - stage: The Pixi.js Stage object which coordinates all on-screen drawing.
     - renderer: The Pixi.js Renderer object, which draws objects to the canvas.
     - display-objects: A tree of objects added to the engine indexed by
       identifier.
-    - event-channel: The channel on which all user input events are published.
-    - render-channel: The cannel onto which rendering messages should be
+    - event-channel: The internal channel on which all user input events are
       published.
-    - view: The canvas DOM node which the renderer will draw to."
-  [& {:keys [stage renderer display-objects event-channel render-channel view]}]
-  (Engine. stage renderer display-objects event-channel render-channel view))
+    - render-channel: The cannel onto which rendering messages should be
+      published."
+  [& {:keys [stage renderer display-objects event-channel render-channel]}]
+  (Engine. stage renderer display-objects event-channel render-channel))
 
 (defrecord EngineConfiguration
   [width height background-color view transparent? antialias? interactive?])
@@ -52,28 +52,63 @@
                         (or background-color 0xFFFFFF) view transparent?
                         antialias? (or interactive? true)))
 
+(defrecord EventTopic [identifier event-name])
+
+(defn new-event-topic
+  "Constructor function for the EventTopic record type. Keys:
+
+    - identifier: The identifier of the object publishing the event.
+    - event-name: The name of the event being published."
+  [& {:keys [identifier event-name]}]
+  (EventTopic. identifier event-name))
+
+(defrecord Event [identifier event-name data])
+
+(defn new-event
+  "Constructor function for the Event record type. Keys:
+
+    - identifier: The identifier for this event.
+    - event-name: The event name for this event.
+    - data: A map of data associated with this event."
+  [& {:keys [identifier event-name data]}]
+  (Event. identifier event-name data))
+
+(defrecord Engine [render-channel event-pub view])
+
+(defn new-engine
+  "Constructor function for the Engine record type. Keys:
+
+    - render-channel: The channel onto which rendering messages should be
+      published.
+    - event-pub: A pub object which can be subscribed to via EventTopics to get
+      events pushed to your channel.
+    - view: The canvas DOM node which the renderer will draw to, must be
+      attached to the DOM."
+  [& {:keys [render-channel event-pub view]}]
+  (Engine. render-channel event-pub view))
+
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
   (atom nil))
 
 (defn- animate-loop
   "Invokes an animation loop function repeatedly via requestAnimationFrame."
-  [engine]
+  [engine-state]
   (defn- animate-loop-fn [timestamp]
     (js/requestAnimFrame animate-loop-fn)
     (.tick (.-Tween js/createjs)
            (- timestamp (or @last-timestamp timestamp)))
-    (.render (:renderer engine) (:stage engine))
+    (.render (:renderer engine-state) (:stage engine-state))
     (reset! last-timestamp timestamp))
   (js/requestAnimFrame animate-loop-fn))
 
 (declare handle-message)
 
 (defn- render-message-loop
-  [{:as engine render-channel :render-channel dispatch-map :dispatch-map}]
+  [{render-channel :render-channel dispatch-map :dispatch-map :as engine-state}]
   (go ;; TODO: Process messages in batches.
     (loop [message (<! render-channel)]
-      (handle-message engine message)
+      (handle-message engine-state message)
       (recur (<! render-channel)))))
 
 (defn initialize
@@ -81,8 +116,8 @@
   call this function only after all necessary Javascript libraries have finished
   loading. A canvas node to render to can be passed to EngineConfiguration,
   otherwise, a new one will be instantiated, returned, and must be added to
-  the DOM. Refer to the documentation for Engine and EngineConfiguration for
-  more information."
+  the DOM. Refer to the documentation for new-engine and
+  new-engine-configuration for more information."
   [config]
   (tin.tween-plugin/install-tween-plugin)
   (let [Stage (.-Stage js/PIXI)
@@ -90,13 +125,20 @@
         renderer (.autoDetectRenderer js/PIXI (:width config) (:height config)
                                       (:view config) (:transparent? config)
                                       (:antialias? config))
-        engine (new-engine :stage stage :renderer renderer
-                           :display-objects (atom {})
-                           :event-channel (chan channel-buffer-size)
-                           :render-channel (chan channel-buffer-size)
+        render-channel (chan channel-buffer-size)
+        event-channel (chan channel-buffer-size)
+        engine-state (new-engine-state :stage stage
+                                       :renderer renderer
+                                       :display-objects (atom {})
+                                       :event-channel event-channel
+                                       :render-channel render-channel)
+        topic-fn (fn [{identifier :identifier event-name :event-name}]
+                   (EventTopic. identifier event-name))
+        engine (new-engine :render-channel render-channel
+                           :event-pub (pub event-channel topic-fn)
                            :view (.-view renderer))]
-    (animate-loop engine)
-    (render-message-loop engine)
+    (animate-loop engine-state)
+    (render-message-loop engine-state)
     engine))
 
 (defn put-messages!
@@ -296,31 +338,34 @@
 ;;;;; Update Message ;;;;;
 
 (defn- handle-update-message
-  [engine [:update identifier properties &
-           {:keys [function] :or {function overwrite}}]])
+  [engine-state [:update identifier properties &
+                 {:keys [function] :or {function overwrite}}]])
 
 ;;;;; Load Message ;;;;;
 
 (defn- handle-load-message
-  [engine [:load identifier & assets]])
+  [{event-channel :event-channel} [:load identifier & assets]]
+  (let [AssetLoader (.-AssetLoader js/PIXI)
+        asset-loader (AssetLoader. (to-array assets))
+        onload (fn [] (put! event-channel (new-event :identifier identifier
+                                                     :event-name "load")))]
+    (.addEventListener asset-loader "onComplete" onload)
+    (.load asset-loader)))
 
 ;;;;; Animate Message ;;;;;
 
 (defn- handle-animate-message
-  [engine [:animate & animation-exprs]])
+  [engine-state [:animate & animation-exprs]])
 
-;;;;; Subscribe/Unsubscribe Messages ;;;;;
+;;;;; Publish Message ;;;;;
 
-(defn- handle-subscribe-message
-  [engine [:subscribe source & {:keys [to query event]}]])
-
-(defn- handle-unsubscribe-message
-  [engine [:unsubscribe source & {:keys [from]}]])
+(defn- handle-publish-message
+  [engine-state [:publish identifier & {:keys [query event]}]])
 
 ;;;;; Clear Message ;;;;;
 
 (defn- handle-clear-message
-  [engine [:clear]])
+  [engine-state [:clear]])
 
 ;;;;; Message Dispatch ;;;;;
 
@@ -328,31 +373,31 @@
   "Process a render channel message by dispatching to the appropriate handler
   function. A handler can optionally return a chan object, if one is returned
   message processing will be halted until a read on the channel completes."
-  [engine message]
+  [engine-state message]
   (case (first message)
-    :render (handle-render-message engine message)
-    :update (handle-update-message engine message)
-    :load (handle-load-message engine message)
-    :animate (handle-animate-message engine message)
-    :subscribe (handle-subscribe-message engine message)
-    :unsubscribe (handle-unsubscribe-message engine message)
-    :clear (handle-clear-message engine message)))
+    :render (handle-render-message engine-state message)
+    :update (handle-update-message engine-state message)
+    :load (handle-load-message engine-state message)
+    :animate (handle-animate-message engine-state message)
+    :publish (handle-publish-message engine-state message)
+    :clear (handle-clear-message engine-state message)))
 
 (comment
   ; Top-level messages:
-  ; create display objects
+  ; Create display objects
   [:render & object-exprs]
-  ; update existing display objects
+  ; Update existing display objects
   [:update identifier properties {:function f}]
-  ; load assets
+  ; Load assets, automatically publish on the provided identifier on completion.
   [:load identifier & assets]
-  ; start an animation
+  ; Start an animation
   [:animate & animation-exprs]
-  ; listen for input events on a display object
-  [:subscribe source :to destination :query query :event event-expr]
-  ; stop listening for input events
-  [:unsubscribe source :from destination]
-  ; remove everything from the stage
+  ; Request that the object at 'identifier' start publishing events matching the
+  ; provided event expression. Events will be available under an EventTopic
+  ; consisting of the identifier and event name. Multiple calls to :publish for
+  ; the same topic have no effect except merging in the newly provided query.
+  [:publish identifier :query query :event event-expr]
+  ; Remove everything from the stage
   [:clear]
 
   ; Object expressions
