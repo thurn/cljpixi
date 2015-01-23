@@ -6,7 +6,7 @@
    [clojure.set :refer [union]]
    [clojure.string]
    [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
-                            alts! timeout pub]])
+                            alts! timeout pub sub]])
   (:require-macros [cljs.core.async.macros :refer [go]]
                    [cljs.core.match.macros :refer [match]]))
 
@@ -16,7 +16,7 @@
 ;;;;; API ;;;;;
 
 (defrecord EngineState
-  [stage renderer display-objects event-channel render-channel view])
+  [stage renderer display-objects event-channel render-channel])
 
 (defn- new-engine-state
   "Constructor function for the internal EngineState record type. Keys:
@@ -30,7 +30,7 @@
     - render-channel: The cannel onto which rendering messages should be
       published."
   [& {:keys [stage renderer display-objects event-channel render-channel]}]
-  (Engine. stage renderer display-objects event-channel render-channel))
+  (EngineState. stage renderer display-objects event-channel render-channel))
 
 (defrecord EngineConfiguration
   [width height background-color view transparent? antialias? interactive?])
@@ -61,6 +61,13 @@
     - event-name: The name of the event being published."
   [& {:keys [identifier event-name]}]
   (EventTopic. identifier event-name))
+
+(defn subscribe-to-event
+  "Convenience function to subscribe |channel| to the event with identifier
+  |identifier| and event name |event-name|."
+  [{event-pub :event-pub} channel identifier event-name]
+  (let [topic (new-event-topic :identifier identifier :event-name event-name)]
+    (sub event-pub topic channel)))
 
 (defrecord Event [identifier event-name data])
 
@@ -142,9 +149,10 @@
     engine))
 
 (defn put-messages!
-  "Puts the messages from |messages| onto |engine|'s render channel."
-  [engine messages]
-  (dorun (map #(put! (:render-channel engine) %) messages)))
+  "Convenience function to put the messages from |messages| onto the render
+  channel."
+  [{render-channel :render-channel} messages]
+  (doseq [message messages] (put! render-channel message)))
 
 ;;;;; Helper Functions ;;;;;
 
