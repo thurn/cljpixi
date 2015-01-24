@@ -278,6 +278,7 @@
     (update-properties! container properties)))
 
 (defn- new-sprite
+  "Instantiates and returns a new PIXI.Sprite object."
   [display-objects [:sprite identifier texture properties]]
   (let [Sprite (.-Sprite js/PIXI)
         sprite (Sprite. (new-texture texture))]
@@ -285,6 +286,7 @@
     (update-properties! sprite properties)))
 
 (defn- new-tiling-sprite
+  "Instantiates and returns a new PIXI.TilingSprite object."
   [display-objects [:tiling-sprite identifier texture width height properties]]
   (let [TilingSprite (.-TilingSprite js/PIXI)
         tiling-sprite (TilingSprite. (new-texture texture) width height)]
@@ -292,6 +294,7 @@
     (update-properties! tiling-sprite properties)))
 
 (defn- new-movie-clip
+  "Instantiates and returns a new PIXI.MovieClip object."
   [display-objects [:movie-clip identifier textures properties]]
   (let [MovieClip (.-MovieClip js/PIXI)
         movie-clip (MovieClip. (to-array (map new-texture textures)))]
@@ -352,6 +355,8 @@
 ;;;;; Load Message ;;;;;
 
 (defn- handle-load-message
+  "Loads the resources in |assets| and then publishes an event named 'load' on
+  |event-channel| under identifier |identifier|."
   [{event-channel :event-channel} [:load identifier & assets]]
   (let [AssetLoader (.-AssetLoader js/PIXI)
         asset-loader (AssetLoader. (to-array assets))
@@ -362,8 +367,31 @@
 
 ;;;;; Animate Message ;;;;;
 
+(defn- add-tween-expression!
+  [engine-state tween object expression])
+
+(defn- add-clip-expression!
+  [engine-state tween object expression])
+
+(defn- add-then-expression!
+  [engine-state tween object expression])
+
 (defn- handle-animate-message
-  [engine-state [:animate & animation-exprs]])
+  "Processes the :animate message by creating a Tween object targeting each
+  display object matching |identifier| and then queueing each expression in
+  |animation-exprs| on that tween."
+  [engine-state [:animate identifier properties & animation-exprs]]
+  (doseq [object (:display-objects engine-state)]
+    (let [Tween (.-Tween js/createjs)
+          tween (.get Tween object (clj->js properties))]
+      (doseq [expression animation-exprs]
+        (case (first expression)
+          :tween
+            (add-tween-expression! engine-state tween object expression)
+          (:play-clip :stop-clip)
+            (add-clip-expression! engine-state tween object expression)
+          :then
+            (add-then-expression! engine-state tween object expression))))))
 
 ;;;;; Publish Message ;;;;;
 
@@ -398,8 +426,8 @@
   [:update identifier properties {:function f}]
   ; Load assets, automatically publish on the provided identifier on completion.
   [:load identifier & assets]
-  ; Start an animation
-  [:animate & animation-exprs]
+  ; Start an animation affected the objects matching the provided identifier.
+  [:animate identifier properties & animation-exprs]
   ; Request that the object at 'identifier' start publishing events matching the
   ; provided event expression. Events will be available under an EventTopic
   ; consisting of the identifier and event name. Multiple calls to :publish for
