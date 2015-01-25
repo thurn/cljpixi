@@ -157,8 +157,9 @@
 ;;;;; Helper Functions ;;;;;
 
 (defn point-binary-function
-  "Takes a binary function and returns a function which will apply it to
-  both components of two [:point x y] expressions and return a new [:point]."
+  "Takes a binary function and wraps it in another function which will apply it
+  to both components of two [:point x y] expression arguments and return a
+  new [:point] with the result."
   [binary-function]
   (fn [[:point old-x old-y] [:point new-x new-y]]
     [:point (binary-function old-x new-x) (binary-function old-y new-y)]))
@@ -367,31 +368,54 @@
 
 ;;;;; Animate Message ;;;;;
 
+(defn- new-tween-target
+  "Creates a new tween target javascript object containing the target values for
+  a tween on |object| to the targets in |properties| modified by the binary
+  functions in |function-map|."
+  [object properties function-map]
+  (clj->js
+   (into {}
+         (for [[key value] properties]
+           (let [function (expression-lift (get function-map key overwrite))]
+             ([(to-camelcase key)
+               (function (get-property object key) value)]))))))
+
 (defn- add-tween-expression!
-  [engine-state tween object expression])
+  "Queues a tween operation for |object| onto |tween|, a Tween object, to the
+  target values in |properties|. A |function-map| can be provided, which should
+  be a map from property names to binary functions. To determine the target
+  tween value for a property, its associated function will be called
+  as (function current-value value) where 'current-value' is the current value
+  of the property and 'value' is the value supplied in |properties|."
+  [tween object
+   [:tween properties
+    {:keys [function-map duration ease]
+     :or {function-map {} duration 1000 ease (tin.ease/linear)}}]]
+  (.to tween (new-tween-target object properties function-map) duration ease))
 
 (defn- add-clip-expression!
-  [engine-state tween object expression])
+  [tween object expression])
 
 (defn- add-then-expression!
-  [engine-state tween object expression])
+  [render-channel tween object expression])
 
 (defn- handle-animate-message
   "Processes the :animate message by creating a Tween object targeting each
   display object matching |identifier| and then queueing each expression in
   |animation-exprs| on that tween."
-  [engine-state [:animate identifier properties & animation-exprs]]
-  (doseq [object (:display-objects engine-state)]
+  [{display-objects :display-objects render-channel :render-channel}
+   [:animate identifier properties & animation-exprs]]
+  (doseq [object (objects-for-identifier display-objects identifier)]
     (let [Tween (.-Tween js/createjs)
           tween (.get Tween object (clj->js properties))]
       (doseq [expression animation-exprs]
         (case (first expression)
           :tween
-            (add-tween-expression! engine-state tween object expression)
+            (add-tween-expression! tween object expression)
           (:play-clip :stop-clip)
-            (add-clip-expression! engine-state tween object expression)
+            (add-clip-expression! tween object expression)
           :then
-            (add-then-expression! engine-state tween object expression))))))
+            (add-then-expression! render-channel tween object expression))))))
 
 ;;;;; Publish Message ;;;;;
 
@@ -447,7 +471,10 @@
   [:texture :frame frame-id]
 
   ; Animation expressions
-  [:tween properties {:function f :duration d :ease e}]
+  ; function-map is a map from properties to binary functions to apply to the
+  ; current property value and the value in |properties| to produce the final
+  ; target value.
+  [:tween properties {:function-map m :duration d :ease e}]
   [:play-clip frame?]
   [:stop-clip frame?]
   [:then message] ; Push arbitrary message onto the render queue.
