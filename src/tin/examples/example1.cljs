@@ -12,8 +12,9 @@
      {:anchor [:point 0.5 0.5] :position [:point 400 300]}]
     [:sprite "bunnies/moving" [:texture :frame "resources/example1/bunny.png"]
      {:anchor [:point 0.5 0.5] :position [:point 50 50]}]]
+   [:animate "bunnies/spinning" {:loop true}
+    [:tween {:rotation (* 2 Math/PI)}]]
    ])
-
 
 (defn example1 [engine]
   (put-messages! engine messages)

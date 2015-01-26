@@ -188,7 +188,7 @@
 (defn- look-up-identifier
   "Looks up (via get-in) the value under |identifier|."
   [display-objects identifier]
-  (get-in display-objects (split-identifier identifier)))
+  (get-in @display-objects (split-identifier identifier)))
 
 (defn- objects-for-identifier
   "Returns all display objets which match |identifier|."
@@ -256,12 +256,12 @@
   object)
 
 (defn- new-point
-  [[:point x y]]
+  [[:point_ x y]]
   (let [Point (.-Point js/PIXI)]
     (Point. x y)))
 
 (defn- new-texture
-  [[:texture type argument]]
+  [[:texture_ type argument]]
   (let [Texture (.-Texture js/PIXI)]
     (case type
       :image (.fromImage Texture argument)
@@ -270,7 +270,7 @@
 
 (defn- new-container
   "Instantiates and returns a new PIXI.DisplayObjectContainer object."
-  [display-objects [:container identifier properties & children]]
+  [display-objects [:container_ identifier properties & children]]
   (let [DisplayObjectContainer (.-DisplayObjectContainer js/PIXI)
         container (DisplayObjectContainer.)]
     (doseq [child children]
@@ -280,7 +280,7 @@
 
 (defn- new-sprite
   "Instantiates and returns a new PIXI.Sprite object."
-  [display-objects [:sprite identifier texture properties]]
+  [display-objects [:sprite_ identifier texture properties]]
   (let [Sprite (.-Sprite js/PIXI)
         sprite (Sprite. (new-texture texture))]
     (set-object-for-identifier! display-objects sprite identifier)
@@ -288,7 +288,7 @@
 
 (defn- new-tiling-sprite
   "Instantiates and returns a new PIXI.TilingSprite object."
-  [display-objects [:tiling-sprite identifier texture width height properties]]
+  [display-objects [:tiling-sprite_ identifier texture width height properties]]
   (let [TilingSprite (.-TilingSprite js/PIXI)
         tiling-sprite (TilingSprite. (new-texture texture) width height)]
     (set-object-for-identifier! display-objects tiling-sprite identifier)
@@ -296,7 +296,7 @@
 
 (defn- new-movie-clip
   "Instantiates and returns a new PIXI.MovieClip object."
-  [display-objects [:movie-clip identifier textures properties]]
+  [display-objects [:movie-clip_ identifier textures properties]]
   (let [MovieClip (.-MovieClip js/PIXI)
         movie-clip (MovieClip. (to-array (map new-texture textures)))]
     (set-object-for-identifier! display-objects movie-clip identifier)
@@ -342,7 +342,7 @@
 (defn- handle-render-message
   "Processes the :render message by creating the requested display objects and
   adding them to the Stage and to the display-objects tree."
-  [{stage :stage display-objects :display-objects} [:render & object-exprs]]
+  [{stage :stage display-objects :display-objects} [:render_ & object-exprs]]
   (doseq [[type identifier & _ :as object-expr] object-exprs
           :let [object (expression->object object-expr display-objects)]]
     (.addChild stage object)))
@@ -350,7 +350,7 @@
 ;;;;; Update Message ;;;;;
 
 (defn- handle-update-message
-  [engine-state [:update identifier properties &
+  [engine-state [:update_ identifier properties &
                  {:keys [function] :or {function overwrite}}]])
 
 ;;;;; Load Message ;;;;;
@@ -377,8 +377,8 @@
    (into {}
          (for [[key value] properties]
            (let [function (expression-lift (get function-map key overwrite))]
-             ([(to-camelcase key)
-               (function (get-property object key) value)]))))))
+             [(to-camelcase key)
+              (function (get-property object key) value)])))))
 
 (defn- add-tween-expression!
   "Queues a tween operation for |object| onto |tween|, a Tween object, to the
@@ -388,7 +388,7 @@
   as (function current-value value) where 'current-value' is the current value
   of the property and 'value' is the value supplied in |properties|."
   [tween object
-   [:tween properties
+   [:tween_ properties
     {:keys [function-map duration ease]
      :or {function-map {} duration 1000 ease (tin.ease/linear)}}]]
   (.to tween (new-tween-target object properties function-map) duration ease))
@@ -404,7 +404,7 @@
   display object matching |identifier| and then queueing each expression in
   |animation-exprs| on that tween."
   [{display-objects :display-objects render-channel :render-channel}
-   [:animate identifier properties & animation-exprs]]
+   [:animate_ identifier properties & animation-exprs]]
   (doseq [object (objects-for-identifier display-objects identifier)]
     (let [Tween (.-Tween js/createjs)
           tween (.get Tween object (clj->js properties))]
@@ -420,12 +420,12 @@
 ;;;;; Publish Message ;;;;;
 
 (defn- handle-publish-message
-  [engine-state [:publish identifier & {:keys [query event]}]])
+  [engine-state [:publish_ identifier & {:keys [query event]}]])
 
 ;;;;; Clear Message ;;;;;
 
 (defn- handle-clear-message
-  [engine-state [:clear]])
+  [engine-state [:clear_]])
 
 ;;;;; Message Dispatch ;;;;;
 
