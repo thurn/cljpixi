@@ -161,7 +161,7 @@
   to both components of two [:point x y] expression arguments and return a
   new [:point] with the result."
   [binary-function]
-  (fn [[:point old-x old-y] [:point new-x new-y]]
+  (fn [[:point_ old-x old-y] [:point_ new-x new-y]]
     [:point (binary-function old-x new-x) (binary-function old-y new-y)]))
 
 (defn overwrite
@@ -357,12 +357,18 @@
 
 (defn- handle-load-message
   "Loads the resources in |assets| and then publishes an event named 'load' on
-  |event-channel| under identifier |identifier|."
-  [{event-channel :event-channel} [:load identifier & assets]]
+  |event-channel| under identifier |identifier|. Messages in |messages| will be
+  put onto the render channel after load."
+  [{event-channel :event-channel :as engine-state} [:load_ identifier assets
+                                                    [:then_ & messages]]]
   (let [AssetLoader (.-AssetLoader js/PIXI)
-        asset-loader (AssetLoader. (to-array assets))
-        onload (fn [] (put! event-channel (new-event :identifier identifier
-                                                     :event-name "load")))]
+        asset-list (if-not (sequential? assets) [assets])
+        asset-loader (AssetLoader. (to-array asset-list))
+        onload (fn []
+                 (put! event-channel (new-event :identifier identifier
+                                                :event-name "load"))
+                 (when messages
+                   (put-messages! engine-state messages)))]
     (.addEventListener asset-loader "onComplete" onload)
     (.load asset-loader)))
 
@@ -449,7 +455,7 @@
   ; Update existing display objects
   [:update identifier properties {:function f}]
   ; Load assets, automatically publish on the provided identifier on completion.
-  [:load identifier & assets]
+  [:load identifier [assets] [:then & messages]]
   ; Start an animation affected the objects matching the provided identifier.
   [:animate identifier properties & animation-exprs]
   ; Request that the object at 'identifier' start publishing events matching the
@@ -474,10 +480,10 @@
   ; function-map is a map from properties to binary functions to apply to the
   ; current property value and the value in |properties| to produce the final
   ; target value.
-  [:tween properties {:function-map m :duration d :ease e}]
+  [:tween properties {:function m :duration d :ease e}]
   [:play-clip frame?]
   [:stop-clip frame?]
-  [:then message] ; Push arbitrary message onto the render queue.
+  [:then & messages] ; Push arbitrary messages onto the render queue.
 
   ; Event expressions
   [:pan :threshold 10]
