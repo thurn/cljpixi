@@ -377,27 +377,25 @@
 (defn- new-tween-target
   "Creates a new tween target javascript object containing the target values for
   a tween on |object| to the targets in |properties| modified by the binary
-  functions in |function-map|."
-  [object properties function-map]
+  function in |function|."
+  [object properties function]
   (clj->js
    (into {}
          (for [[key value] properties]
-           (let [function (expression-lift (get function-map key overwrite))]
-             [(to-camelcase key)
-              (function (get-property object key) value)])))))
+           [(to-camelcase key)
+            ((expression-lift function) (get-property object key) value)]))))
 
 (defn- add-tween-expression!
   "Queues a tween operation for |object| onto |tween|, a Tween object, to the
-  target values in |properties|. A |function-map| can be provided, which should
-  be a map from property names to binary functions. To determine the target
-  tween value for a property, its associated function will be called
-  as (function current-value value) where 'current-value' is the current value
-  of the property and 'value' is the value supplied in |properties|."
+  target values in |properties|. A |function| can be provided, which will be
+  called as (function current-value value) where 'current-value' is the current
+  value of the property and 'value' is the value supplied in the |properties|
+  map."
   [tween object
    [:tween_ properties
-    {:keys [function-map duration ease]
-     :or {function-map {} duration 1000 ease (tin.ease/linear)}}]]
-  (.to tween (new-tween-target object properties function-map) duration ease))
+    {:keys [function duration ease]
+     :or {function overwrite duration 1000 ease (tin.ease/linear)}}]]
+  (.to tween (new-tween-target object properties function) duration ease))
 
 (defn- add-clip-expression!
   [tween object expression])
@@ -456,7 +454,9 @@
   [:update identifier properties {:function f}]
   ; Load assets, automatically publish on the provided identifier on completion.
   [:load identifier [assets] [:then & messages]]
-  ; Start an animation affected the objects matching the provided identifier.
+  ; Start an animation affected the objects matching the provided identifier. An
+  ; animation is serial -- it is a sequence of actions to perform, one after the
+  ; other. To perform animations in parallel, use multiple animate messages.
   [:animate identifier properties & animation-exprs]
   ; Request that the object at 'identifier' start publishing events matching the
   ; provided event expression. Events will be available under an EventTopic
@@ -477,9 +477,8 @@
   [:texture :frame frame-id]
 
   ; Animation expressions
-  ; function-map is a map from properties to binary functions to apply to the
-  ; current property value and the value in |properties| to produce the final
-  ; target value.
+  ; function is a binary function to apply to the current property value and
+  ; the value in |properties| to produce the final target value.
   [:tween properties {:function m :duration d :ease e}]
   [:play-clip frame?]
   [:stop-clip frame?]
