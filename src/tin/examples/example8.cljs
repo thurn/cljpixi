@@ -1,6 +1,6 @@
 (ns tin.examples.example8
   (:require
-   [tin.core :refer [put-messages!]]))
+   [tin.new :refer [put-messages!]]))
 
 (def messages
   [[:text "hello"

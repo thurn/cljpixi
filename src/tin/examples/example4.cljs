@@ -1,7 +1,7 @@
 (ns tin.examples.example4
   (:require
    [tin.examples.utils :refer [rand-between]]
-   [tin.core :refer [point-binary-function]]
+   [tin.new :refer [point-binary-function]]
    [cljs.core.async :refer [put!]]))
 
 (def ball-count 5000)

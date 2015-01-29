@@ -1,6 +1,6 @@
 (ns tin.examples.example7
   (:require
-   [tin.core :refer [put-messages! point-binary-function]])
+   [tin.new :refer [put-messages! point-binary-function]])
   (:require-macros [cljs.core.async.macros :refer [go]]))
 
 (def messages

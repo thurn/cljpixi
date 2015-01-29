@@ -398,16 +398,29 @@
   (.to tween (new-tween-target object properties function) duration ease))
 
 (defn- add-clip-expression!
-  [tween object expression])
+  "Queues an action to play or stop a MovieClip for |object| onto |tween|."
+  [tween object [action frame]]
+  (.call tween
+         (fn []
+           (cond
+            (and (= action :play-clip) frame) (.gotoAndPlay object frame)
+            (= action :play-clip) (.play object)
+            (and (= action :stop-clip) frame) (.gotoAndStop object frame)
+            (= action :stop-clip) (.stop object)))))
 
 (defn- add-then-expression!
-  [render-channel tween object expression])
+  "Queues an action for |object| on |tween| to put the |messages| in the
+  supplied :then expression onto the render channel."
+  [engine-state tween object [:then_ & messages]]
+  (.call tween
+         (fn []
+           (put-messages! engine-state messages))))
 
 (defn- handle-animate-message
   "Processes the :animate message by creating a Tween object targeting each
   display object matching |identifier| and then queueing each expression in
   |animation-exprs| on that tween."
-  [{display-objects :display-objects render-channel :render-channel}
+  [{display-objects :display-objects :as engine-state}
    [:animate_ identifier properties & animation-exprs]]
   (doseq [object (objects-for-identifier display-objects identifier)]
     (let [Tween (.-Tween js/createjs)
@@ -419,7 +432,7 @@
           (:play-clip :stop-clip)
             (add-clip-expression! tween object expression)
           :then
-            (add-then-expression! render-channel tween object expression))))))
+            (add-then-expression! engine-state tween object expression))))))
 
 ;;;;; Publish Message ;;;;;
 

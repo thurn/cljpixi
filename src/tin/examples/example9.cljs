@@ -1,6 +1,7 @@
 (ns tin.examples.example9
   (:require
-   [tin.core :refer [put-messages! events]]
+   [tin.core :refer [events]]
+   [tin.new :refer [put-messages!]]
    [cljs.core.async :refer [put! chan sub]])
   (:require-macros [cljs.core.async.macros :refer [go]]))
 

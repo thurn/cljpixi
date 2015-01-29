@@ -3,6 +3,7 @@
    [tin.new :refer [initialize new-engine-configuration]]
    [tin.examples.example1 :refer [example1]]
    [tin.examples.example2 :refer [example2]]
+   [tin.examples.example3 :refer [example3]]
    [cljs.core.async :refer [put!]]))
 
 (defn change-example-fn
@@ -15,6 +16,7 @@
       "" nil
       "#example1" (example1 engine)
       "#example2" (example2 engine)
+      "#example3" (example3 engine)
       )))
 
 (defn ^:export main []
