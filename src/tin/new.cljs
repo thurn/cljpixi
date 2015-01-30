@@ -368,6 +368,7 @@
                  (put! event-channel (new-event :identifier identifier
                                                 :event-name "load"))
                  (when messages
+                   (prn (second messages))
                    (put-messages! engine-state messages)))]
     (.addEventListener asset-loader "onComplete" onload)
     (.load asset-loader)))

@@ -4,7 +4,7 @@
    [tin.new :refer [put-messages!]]))
 
 (defn make-texture
-  [i] [:texture [:frame (str "Explosion_Sequence_A " i ".png")]])
+  [i] [:texture :frame (str "Explosion_Sequence_A " i ".png")])
 
 (defn make-movie-clip
   [i]
@@ -19,10 +19,10 @@
   [:animate (str "explosions/" i) {} [:play-clip (rand-between 1 27)]])
 
 (def messages
-  [[:load "resources/example3/SpriteSheet.json"
+  [[:load "assets" "resources/example3/SpriteSheet.json"
     (into [:then]
           (concat
-           (into [:render] (map make-movie-clip (range 50)))
+           (list (into [:render] (map make-movie-clip (range 50))))
            (map make-animation (range 50))))]])
 
 (defn example3 [engine]
