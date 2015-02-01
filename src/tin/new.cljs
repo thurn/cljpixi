@@ -191,11 +191,28 @@
   (get-in @display-objects (split-identifier identifier)))
 
 (defn- objects-for-identifier
-  "Returns all display objets which match |identifier|."
+  "Returns all display objects which match |identifier|."
   [display-objects identifier]
   (letfn [(all-values [value]
             (if (map? value) (map all-values (vals value)) (list value)))]
     (flatten (all-values (look-up-identifier display-objects identifier)))))
+
+(defn- objects-and-identifiers
+  [object-map prefix]
+  (flatten
+    (for [[key value] object-map :let [path (str prefix "/" key)]]
+      (if (map? value)
+        (objects-and-identifiers value path)
+        {:object value :identifier path}))))
+
+(defn- objects-and-identifiers-for-identifier
+  "Returns a sequence of pairs of {:object object, :identifier identifier} for
+  each object matching |identifier|."
+  [display-objects identifier]
+  (let [value (look-up-identifier display-objects identifier)]
+    (if (map? value)
+      (objects-and-identifiers value identifier)
+      (list {:object value :identifier identifier}))))
 
 (defn- set-object-for-identifier!
   "Looks up the value for |identifier|, and then
@@ -437,8 +454,19 @@
 
 ;;;;; Publish Message ;;;;;
 
+(defn- add-event-handler!
+  [object identifier event-expression])
+
+(defn- register-query!
+  [object identifier query])
+
 (defn- handle-publish-message
-  [engine-state [:publish_ identifier & {:keys [query event]}]])
+  [{display-objects :display-objects :as engine-state}
+   [:publish_ identifier & {:keys [query event]}]]
+  (doseq [object (objects-for-identifier display-objects identifier)]
+    (impersonate-dom-node! object)
+    (add-event-handler! object identifier event)
+    (register-query! object identifier query)))
 
 ;;;;; Clear Message ;;;;;
 
@@ -472,10 +500,11 @@
   ; animation is serial -- it is a sequence of actions to perform, one after the
   ; other. To perform animations in parallel, use multiple animate messages.
   [:animate identifier properties & animation-exprs]
-  ; Request that the object at 'identifier' start publishing events matching the
-  ; provided event expression. Events will be available under an EventTopic
-  ; consisting of the identifier and event name. Multiple calls to :publish for
-  ; the same topic have no effect except merging in the newly provided query.
+  ; Request that the objects matching 'identifier' start publishing events
+  ; matching the provided event expression. Events will be available under
+  ; EventTopic consisting of the identifier and event name. Multiple calls to
+  ; :publish for the same topic have no effect except merging the provided query
+  ; with any existing queries.
   [:publish identifier :query query :event event-expr]
   ; Remove everything from the stage
   [:clear]
