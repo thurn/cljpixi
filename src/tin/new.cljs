@@ -190,13 +190,6 @@
   [display-objects identifier]
   (get-in @display-objects (split-identifier identifier)))
 
-(defn- objects-for-identifier
-  "Returns all display objects which match |identifier|."
-  [display-objects identifier]
-  (letfn [(all-values [value]
-            (if (map? value) (map all-values (vals value)) (list value)))]
-    (flatten (all-values (look-up-identifier display-objects identifier)))))
-
 (defn- objects-and-identifiers
   [object-map prefix]
   (flatten
@@ -213,6 +206,12 @@
     (if (map? value)
       (objects-and-identifiers value identifier)
       (list {:object value :identifier identifier}))))
+
+(defn- objects-for-identifier
+  "Returns a sequence of all display objects which match |identifier|."
+  [display-objects identifier]
+  (map :object
+       (objects-and-identifiers-for-identifier display-objects identifier)))
 
 (defn- set-object-for-identifier!
   "Looks up the value for |identifier|, and then
@@ -454,19 +453,62 @@
 
 ;;;;; Publish Message ;;;;;
 
-(defn- add-event-handler!
-  [object identifier event-expression])
+(defn- event-callback-fn
+  "Returns a callback function to invoke when an input event occurs."
+  [[event-name & _] identifier query])
 
-(defn- register-query!
-  [object identifier query])
+(defn- get-recognizer-constructor
+  "Looks up the Hammer.js constructor function matching the provided name,
+  returning nil if no match is found."
+  [name]
+  (case name
+    :pan (.-Pan js/Hammer)
+    :pinch (.-Pinch js/Hammer)
+    :press (.-Press js/Hammer)
+    :rotate (.-Rotate js/Hammer)
+    :swipe (.-Swipe js/Hammer)
+    :tap (.-Tap js/Hammer)
+    nil))
 
+(defn- is-recognizer?
+  "Returns true if the provided name matches the name of a Hammer.js
+  recognizer."
+  [name]
+  (some? (get-recognizer-constructor name)))
+
+(defn- add-recognizer-event-handler!
+  [object [event-name & {:as args}] callback]
+  (let [Manager (.-Manager js/Hammer)
+        manager (Manager. object)
+        Constructor (get-recognizer-constructor event-name)]
+    (.add manager (Constructor. (clj->js args)))
+    (.on manager (name event-name) callback)))
+
+(defn- add-standard-event-handler!
+  [object [event-name & _] callback]
+  (case event-name
+    :mouse-over (set! (.-mouseover object) callback)
+    :mouse-out (set! (.-mouseout object) callback)
+    :click-start (do (set! (.-mousedown object) callback)
+                     (set! (.-touchstart object) callback))
+    :click-end-outside (do (set! (.-mouseupoutside object) callback)
+                           (set! (.-touchendoutside object) callback))
+    :click-end (do (set! (.-mouseup object) callback)
+                   (set! (.-touchend object) callback)
+                   (set! (.-mouseupoutside object) callback)
+                   (set! (.-touchendoutside object) callback))))
+
+; TODO: Support lists of callbacks for multiple publish calls.
 (defn- handle-publish-message
   [{display-objects :display-objects :as engine-state}
    [:publish_ identifier & {:keys [query event]}]]
-  (doseq [object (objects-for-identifier display-objects identifier)]
+  (doseq [{object :object object-identifier :identifier}
+          (objects-and-identifiers-for-identifier display-objects identifier)]
     (impersonate-dom-node! object)
-    (add-event-handler! object identifier event)
-    (register-query! object identifier query)))
+    (let [callback (event-callback-fn event object-identifier query)]
+    (if (is-recognizer? (first event))
+      (add-recognizer-event-handler! object event callback)
+      (add-standard-event-handler! object event callback)))))
 
 ;;;;; Clear Message ;;;;;
 
