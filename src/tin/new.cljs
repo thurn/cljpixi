@@ -455,7 +455,9 @@
 
 (defn- event-callback-fn
   "Returns a callback function to invoke when an input event occurs."
-  [[event-name & _] identifier query])
+  [[event-name & _] identifier query]
+  (fn [data]
+    ))
 
 (defn- get-recognizer-constructor
   "Looks up the Hammer.js constructor function matching the provided name,
@@ -506,9 +508,9 @@
           (objects-and-identifiers-for-identifier display-objects identifier)]
     (impersonate-dom-node! object)
     (let [callback (event-callback-fn event object-identifier query)]
-    (if (is-recognizer? (first event))
-      (add-recognizer-event-handler! object event callback)
-      (add-standard-event-handler! object event callback)))))
+      (if (is-recognizer? (first event))
+        (add-recognizer-event-handler! object event callback)
+        (add-standard-event-handler! object event callback)))))
 
 ;;;;; Clear Message ;;;;;
 
@@ -532,22 +534,33 @@
 
 (comment
   ; Top-level messages:
+
   ; Create display objects
   [:render & object-exprs]
+
   ; Update existing display objects
   [:update identifier properties {:function f}]
+
   ; Load assets, automatically publish on the provided identifier on completion.
   [:load identifier [assets] [:then & messages]]
+
   ; Start an animation affected the objects matching the provided identifier. An
   ; animation is serial -- it is a sequence of actions to perform, one after the
   ; other. To perform animations in parallel, use multiple animate messages.
   [:animate identifier properties & animation-exprs]
+
   ; Request that the objects matching 'identifier' start publishing events
   ; matching the provided event expression. Events will be available under
   ; EventTopic consisting of the identifier and event name. Multiple calls to
   ; :publish for the same topic have no effect except merging the provided query
   ; with any existing queries.
+
+  ; 'query' should be a map from identifiers to sequences of properties. The
+  ; properties will be looked up on each object matching the identifier, and the
+  ; event object will be published with a map from the identifier of each
+  ; matching object to a map from property names to property values.
   [:publish identifier :query query :event event-expr]
+
   ; Remove everything from the stage
   [:clear]
 
