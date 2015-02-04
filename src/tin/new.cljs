@@ -69,16 +69,17 @@
   (let [topic (new-event-topic :identifier identifier :event-name event-name)]
     (sub event-pub topic channel)))
 
-(defrecord Event [identifier event-name data])
+(defrecord Event [identifier event-name event-data query-result])
 
 (defn new-event
   "Constructor function for the Event record type. Keys:
 
     - identifier: The identifier for this event.
     - event-name: The event name for this event.
-    - data: A map of data associated with this event."
-  [& {:keys [identifier event-name data]}]
-  (Event. identifier event-name data))
+    - event-data: A map of data associated with this event.
+    - query-result: A map of data looked up by a query when the event occured."
+  [& {:keys [identifier event-name event-data query-result]}]
+  (Event. identifier event-name event-data query-result))
 
 (defrecord Engine [render-channel event-pub view])
 
@@ -453,11 +454,22 @@
 
 ;;;;; Publish Message ;;;;;
 
+(defn- perform-query
+  "Performs |query|, which hsould be a map from identifiers to sequences of
+  properties. The result will be a map from identifiers to maps from property
+  names to property values."
+  [engine-state query])
+
 (defn- event-callback-fn
   "Returns a callback function to invoke when an input event occurs."
-  [[event-name & _] identifier query]
+  [{event-channel :event-channel :as engine-state}
+   [event-name & _] identifier query]
   (fn [data]
-    ))
+    (let [query-result (perform-query query)]
+      (put! event-channel (new-event :identifier identifier
+                                     :event-name event-name
+                                     :event-data data
+                                     :query-result query-result)))))
 
 (defn- get-recognizer-constructor
   "Looks up the Hammer.js constructor function matching the provided name,
@@ -507,7 +519,8 @@
   (doseq [{object :object object-identifier :identifier}
           (objects-and-identifiers-for-identifier display-objects identifier)]
     (impersonate-dom-node! object)
-    (let [callback (event-callback-fn event object-identifier query)]
+    (let [callback (event-callback-fn engine-state event object-identifier
+                                      query)]
       (if (is-recognizer? (first event))
         (add-recognizer-event-handler! object event callback)
         (add-standard-event-handler! object event callback)))))
