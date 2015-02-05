@@ -179,6 +179,12 @@
      (str (first parts) (apply str (map clojure.string/capitalize
                                         (rest parts)))) "?" "")))
 
+(defn to-js-object
+  "Converts |map|, a clojure map, to a JS object, invoking to-camelcase on the
+  keys"
+  [map]
+  (clj->js (into {} (for [[key value] map] [(to-camelcase key) value]))))
+
 ;;;;; Identifiers ;;;;;
 
 (defn- split-identifier
@@ -397,10 +403,10 @@
   a tween on |object| to the targets in |properties| modified by the binary
   function in |function|."
   [object properties function]
-  (clj->js
+  (to-js-object
    (into {}
          (for [[key value] properties]
-           [(to-camelcase key)
+           [key
             ((expression-lift function) (get-property object key) value)]))))
 
 (defn- add-tween-expression!
@@ -442,7 +448,7 @@
    [:animate_ identifier properties & animation-exprs]]
   (doseq [object (objects-for-identifier display-objects identifier)]
     (let [Tween (.-Tween js/createjs)
-          tween (.get Tween object (clj->js properties))]
+          tween (.get Tween object (to-js-object properties))]
       (doseq [expression animation-exprs]
         (case (first expression)
           :tween
@@ -455,17 +461,18 @@
 ;;;;; Publish Message ;;;;;
 
 (defn- perform-query
-  "Performs |query|, which hsould be a map from identifiers to sequences of
+  "Performs |query|, which should be a map from identifiers to sequences of
   properties. The result will be a map from identifiers to maps from property
   names to property values."
-  [engine-state query])
+  [engine-state query]
+  {})
 
 (defn- event-callback-fn
   "Returns a callback function to invoke when an input event occurs."
   [{event-channel :event-channel :as engine-state}
    [event-name & _] identifier query]
   (fn [data]
-    (let [query-result (perform-query query)]
+    (let [query-result (perform-query engine-state query)]
       (put! event-channel (new-event :identifier identifier
                                      :event-name event-name
                                      :event-data data
@@ -495,7 +502,7 @@
   (let [Manager (.-Manager js/Hammer)
         manager (Manager. object)
         Constructor (get-recognizer-constructor event-name)]
-    (.add manager (Constructor. (clj->js args)))
+    (.add manager (Constructor. (to-js-object args)))
     (.on manager (name event-name) callback)))
 
 (defn- add-standard-event-handler!
