@@ -9,7 +9,7 @@
   [:sprite
    (str "balls/" i)
    [:texture :image "resources/example4/bubble_32x32.png"]
-   {:position [:point 400, 300] :anchor [:point 0.5 0.5]}])
+   {:position [:point 400 300], :anchor [:point 0.5 0.5]}])
 
 (defn ball-animation [i]
   (let [random-angle (* (rand) Math/PI 2)]

@@ -52,48 +52,20 @@
                         (or background-color 0xFFFFFF) view transparent?
                         antialias? (or interactive? true)))
 
-(defrecord EventTopic [identifier event-name])
-
-(defn new-event-topic
-  "Constructor function for the EventTopic record type. Keys:
-
-    - identifier: The identifier of the object publishing the event.
-    - event-name: The name of the event being published."
-  [& {:keys [identifier event-name]}]
-  (EventTopic. identifier event-name))
-
-(defn subscribe-to-event
-  "Convenience function to subscribe |channel| to the event with identifier
-  |identifier| and event name |event-name|."
-  [{event-pub :event-pub} channel identifier event-name]
-  (let [topic (new-event-topic :identifier identifier :event-name event-name)]
-    (sub event-pub topic channel)))
-
-(defrecord Event [identifier event-name event-data query-result])
-
-(defn new-event
-  "Constructor function for the Event record type. Keys:
-
-    - identifier: The identifier for this event.
-    - event-name: The event name for this event.
-    - event-data: A map of data associated with this event.
-    - query-result: A map of data looked up by a query when the event occured."
-  [& {:keys [identifier event-name event-data query-result]}]
-  (Event. identifier event-name event-data query-result))
-
-(defrecord Engine [render-channel event-pub view])
+(defrecord Engine [render-channel event-listeners view])
 
 (defn new-engine
   "Constructor function for the Engine record type. Keys:
 
     - render-channel: The channel onto which rendering messages should be
       published.
-    - event-pub: A pub object which can be subscribed to via EventTopics to get
-      events pushed to your channel.
+    - event-listeners: An atom containing a map from event names to maps from
+      identifiers to lists of channels which have subscribed to events with the
+      associated name and identifier.
     - view: The canvas DOM node which the renderer will draw to, must be
       attached to the DOM."
-  [& {:keys [render-channel event-pub view]}]
-  (Engine. render-channel event-pub view))
+  [& {:keys [render-channel event-listeners view]}]
+  (Engine. render-channel event-listeners view))
 
 (def ^:private last-timestamp
   "The relative timestamp at which the animate loop last ran."
@@ -140,10 +112,8 @@
                                        :display-objects (atom {})
                                        :event-channel event-channel
                                        :render-channel render-channel)
-        topic-fn (fn [{identifier :identifier event-name :event-name}]
-                   (EventTopic. identifier event-name))
         engine (new-engine :render-channel render-channel
-                           :event-pub (pub event-channel topic-fn)
+                           :event-listeners (atom {})
                            :view (.-view renderer))]
     (animate-loop engine-state)
     (render-message-loop engine-state)
@@ -244,6 +214,26 @@
                                    object)
        :else (swap! display-objects assoc-in parts
                     {"0" current-value, "1" object})))))
+
+;;;;; Events ;;;;;
+
+(defrecord Event [identifier event-name event-data query-result])
+
+(defn new-event
+  "Constructor function for the Event record type. Keys:
+
+    - identifier: The identifier for this event.
+    - event-name: The event name for this event.
+    - event-data: A map of data associated with this event.
+    - query-result: A map of data looked up by a query when the event occured."
+  [& {:keys [identifier event-name event-data query-result]}]
+  (Event. identifier event-name event-data query-result))
+
+(defn subscribe-to-event
+  [{event-listeners :event-listeners} event-name identifier])
+
+(defn publish-event
+  [{event-listeners :event-listeners} event-name identifier event])
 
 ;;;;; Render Message ;;;;;
 

@@ -18,7 +18,7 @@
     [:tween {:rotation (* 2 Math/PI) :scale [:point 2 2]} {:duration 5000}]]
    [:animate "bunnies/moving" {:loop? true}
     [:tween {:position [:point 500 500]}
-     {:duration 5000 :function (point-binary-function +)}]]])
+     {:duration 5000, :function (point-binary-function +)}]]])
 
 (defn example1 [engine]
   (put-messages! engine messages)

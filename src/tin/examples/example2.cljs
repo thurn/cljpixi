@@ -21,7 +21,7 @@
       [:tween {:rotation (* 2 Math/PI)}]]
      [:animate "container" {:loop? true}
       [:tween {:scale [:point 0.1 0.1]}
-       {:duration 3000 :ease #(Math/sin (* Math/PI %))}]]
+       {:duration 3000, :ease #(Math/sin (* Math/PI %))}]]
      [:animate "container" {:loop? true}
       [:tween {:rotation (* Math/PI 2)} {:duration 20000}]]]]])
 

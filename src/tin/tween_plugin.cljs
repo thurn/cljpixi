@@ -4,11 +4,9 @@
                              "tileScale" "tileScaleOffset"))
 
 (defn- init [tween prop value]
-  (prn "init")
   value)
 
-(defn- step []
-  (prn "step"))
+(defn- step [])
 
 (defn- tween [tween prop value start-values end-values ratio]
   (let [start (aget start-values prop)

@@ -10,9 +10,9 @@
   [i]
   (let [scale (rand-between 0.75 1.5)]
     [:movie-clip (str "explosions/" i) (map make-texture (range 1 27))
-     {:position [:point (rand-int 800) (rand-int 600)]
-      :rotation (rand-int Math/PI) :anchor [:point 0.5 0.5]
-      :scale [:point scale scale] :loop? true}]))
+     {:position [:point (rand-int 800) (rand-int 600)],
+      :rotation (rand-int Math/PI), :anchor [:point 0.5 0.5],
+      :scale [:point scale scale], :loop? true}]))
 
 (defn make-animation
   [i]
