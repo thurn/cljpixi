@@ -1,6 +1,6 @@
 (ns tin.examples.example1
   (:require
-   [tin.new :refer [put-messages! point-binary-function subscribe-to-event]]
+   [tin.new :refer [put-messages! point-binary-function on-event]]
    [cljs.core.async :refer [chan]])
   (:require-macros [cljs.core.async.macros :refer [go]]))
 
@@ -22,9 +22,6 @@
 
 (defn example1 [engine]
   (put-messages! engine messages)
-  (let [load-finished (chan)]
-    (subscribe-to-event engine load-finished "assets/bunny" "load")
-    (go
-      (<! load-finished)
-      (prn "load finished!"))
-    (prn "loading")))
+  (on-event engine "assets/bunny" "load"
+            (fn [] (prn ("load finished"))))
+  (prn "loading"))

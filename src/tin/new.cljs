@@ -16,7 +16,7 @@
 ;;;;; API ;;;;;
 
 (defrecord EngineState
-  [stage renderer display-objects event-channel render-channel])
+  [stage renderer display-objects event-listeners render-channel])
 
 (defn- new-engine-state
   "Constructor function for the internal EngineState record type. Keys:
@@ -230,15 +230,40 @@
   [& {:keys [identifier event-name event-data query-result]}]
   (Event. identifier event-name event-data query-result))
 
+(defn- update-listeners
+  "Returns a function to either conj or disj |channel| onto the provided
+   listeners depending on whether |conj?| is true."
+  [conj? channel event-name identifier]
+  (fn [listeners]
+    (assoc-in listeners [event-name identifier]
+              ((if conj? conj disj)
+               (get-in listeners [event-name identifier] #{}) channel))))
+
 (defn subscribe-to-event!
   "Subscribes |channel| to events named |event-name| published on |identifier|
   or any child of |identifier|."
   [{event-listeners :event-listeners} channel event-name identifier]
-  (letfn [(add-listener [listeners]
-            (assoc-in listeners [event-name identifier]
-                      (conj (get-in listeners [event-name identifier])
-                            channel)))]
-    (swap! event-listeners add-listener)))
+  (swap! event-listeners
+         (update-listeners true channel event-name identifier)))
+
+(defn unsubscribe-from-event!
+  "Unsubscribes |channel| from events named |event-name| published on
+  |identifier| or any child of |identifier|."
+  [{event-listeners :event-listeners} channel event-name identifier]
+  (swap! event-listeners
+         (update-listeners false channel event-name identifier)))
+
+(defn on-event
+  "Run |function| the first time an event occurs named |event-name| on
+  |identifier| or any child of |identifier|, passing the event as an argument to
+  |function|."
+  [engine event-name identifier function]
+  (let [channel (chan)]
+    (subscribe-to-event! engine channel event-name identifier)
+    (go
+      (let [event (<! channel)]
+        (unsubscribe-from-event! engine channel event-name identifier)
+        (function event)))))
 
 (defn- channels-matching-identifier
   "Returns all channels stored in |listener-map| under any level of the
@@ -252,7 +277,8 @@
              (drop-last identifiers)))))
 
 (defn publish-event!
-  [{event-listeners :event-listeners} event-name identifier event]
+  [{event-listeners :event-listeners}
+   {event-name :event-name identifier :identifier :as event}]
   (go
     (doseq [channel (channels-matching-identifier
                      (event-listeners event-name) identifier)]
@@ -393,16 +419,16 @@
 
 (defn- handle-load-message
   "Loads the resources in |assets| and then publishes an event named 'load' on
-  |event-channel| under identifier |identifier|. Messages in |messages| will be
+  |event-listeners| under identifier |identifier|. Messages in |messages| will
   put onto the render channel after load."
-  [{event-channel :event-channel :as engine-state} [:load_ identifier assets
+  [{event-listeners :event-listeners :as engine-state} [:load_ identifier assets
                                                     [:then_ & messages]]]
   (let [AssetLoader (.-AssetLoader js/PIXI)
         asset-list (if-not (sequential? assets) [assets])
         asset-loader (AssetLoader. (to-array asset-list))
         onload (fn []
-                 (put! event-channel (new-event :identifier identifier
-                                                :event-name "load"))
+                 (publish-event! engine-state (new-event :identifier identifier
+                                                         :event-name "load"))
                  (when messages
                    (prn (second messages))
                    (put-messages! engine-state messages)))]
@@ -482,14 +508,13 @@
 
 (defn- event-callback-fn
   "Returns a callback function to invoke when an input event occurs."
-  [{event-channel :event-channel :as engine-state}
-   [event-name & _] identifier query]
+  [engine-state [event-name & _] identifier query]
   (fn [data]
     (let [query-result (perform-query engine-state query)]
-      (put! event-channel (new-event :identifier identifier
-                                     :event-name event-name
-                                     :event-data data
-                                     :query-result query-result)))))
+      (publish-event! engine-state (new-event :identifier identifier
+                                              :event-name event-name
+                                              :event-data data
+                                              :query-result query-result)))))
 
 (defn- get-recognizer-constructor
   "Looks up the Hammer.js constructor function matching the provided name,
