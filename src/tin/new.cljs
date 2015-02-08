@@ -25,12 +25,13 @@
     - renderer: The Pixi.js Renderer object, which draws objects to the canvas.
     - display-objects: A tree of objects added to the engine indexed by
       identifier.
-    - event-channel: The internal channel on which all user input events are
-      published.
+    - event-listeners: An atom containing a map from event names to maps from
+      identifiers to lists of channels which have subscribed to events with the
+      associated name and identifier.
     - render-channel: The cannel onto which rendering messages should be
       published."
-  [& {:keys [stage renderer display-objects event-channel render-channel]}]
-  (EngineState. stage renderer display-objects event-channel render-channel))
+  [& {:keys [stage renderer display-objects event-listeners render-channel]}]
+  (EngineState. stage renderer display-objects event-listeners render-channel))
 
 (defrecord EngineConfiguration
   [width height background-color view transparent? antialias? interactive?])
@@ -106,14 +107,14 @@
                                       (:view config) (:transparent? config)
                                       (:antialias? config))
         render-channel (chan channel-buffer-size)
-        event-channel (chan channel-buffer-size)
+        event-listeners (atom {})
         engine-state (new-engine-state :stage stage
                                        :renderer renderer
                                        :display-objects (atom {})
-                                       :event-channel event-channel
+                                       :event-listeners event-listeners
                                        :render-channel render-channel)
         engine (new-engine :render-channel render-channel
-                           :event-listeners (atom {})
+                           :event-listeners event-listeners
                            :view (.-view renderer))]
     (animate-loop engine-state)
     (render-message-loop engine-state)
@@ -229,11 +230,33 @@
   [& {:keys [identifier event-name event-data query-result]}]
   (Event. identifier event-name event-data query-result))
 
-(defn subscribe-to-event
-  [{event-listeners :event-listeners} event-name identifier])
+(defn subscribe-to-event!
+  "Subscribes |channel| to events named |event-name| published on |identifier|
+  or any child of |identifier|."
+  [{event-listeners :event-listeners} channel event-name identifier]
+  (letfn [(add-listener [listeners]
+            (assoc-in listeners [event-name identifier]
+                      (conj (get-in listeners [event-name identifier])
+                            channel)))]
+    (swap! event-listeners add-listener)))
 
-(defn publish-event
-  [{event-listeners :event-listeners} event-name identifier event])
+(defn- channels-matching-identifier
+  "Returns all channels stored in |listener-map| under any level of the
+   identifier path specified by |identifier|."
+  [listener-map identifier]
+  (loop [result [] identifiers (split-identifier identifier)]
+    (if (empty? identifiers)
+      result
+      (recur (concat result (listener-map
+                             (clojure.string/join "/" identifiers)))
+             (drop-last identifiers)))))
+
+(defn publish-event!
+  [{event-listeners :event-listeners} event-name identifier event]
+  (go
+    (doseq [channel (channels-matching-identifier
+                     (event-listeners event-name) identifier)]
+      (>! channel event))))
 
 ;;;;; Render Message ;;;;;
 
