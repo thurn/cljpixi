@@ -1,6 +1,6 @@
 (ns tin.examples.example5
   (:require
-   [tin.new :refer [subscribe-to-event]]
+   [tin.new :refer [subscribe-to-event!]]
    [cljs.core.async :refer [chan]])
   (:require-macros [cljs.core.async.macros :refer [go alt!]]))
 
