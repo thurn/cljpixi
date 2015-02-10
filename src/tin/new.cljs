@@ -259,11 +259,9 @@
   |function|."
   [engine event-name identifier function]
   (let [channel (chan)]
-    (prn "subscribing")
     (subscribe-to-event! engine channel event-name identifier)
     (go
       (let [event (<! channel)]
-        (prn "event")
         (unsubscribe-from-event! engine channel event-name identifier)
         (function event)))))
 
@@ -281,14 +279,9 @@
 (defn publish-event!
   [{event-listeners :event-listeners}
    {event-name :event-name identifier :identifier :as event}]
-  (prn "publish")
-  (prn "xxyyzz" @event-listeners)
-  (prn "channels" (count (channels-matching-identifier
-                          (@event-listeners event-name) identifier)))
   (go
     (doseq [channel (channels-matching-identifier
                      (@event-listeners event-name) identifier)]
-      (prn "sending")
       (>! channel event))))
 
 ;;;;; Render Message ;;;;;
@@ -434,7 +427,6 @@
         asset-list (if-not (sequential? assets) [assets])
         asset-loader (AssetLoader. (to-array asset-list))
         onload (fn []
-                 (prn "onload")
                  (publish-event! engine-state (new-event :identifier identifier
                                                          :event-name "load"))
                  (when messages
