@@ -22,5 +22,5 @@
 
 (defn example1 [engine]
   (put-messages! engine messages)
-  (on-event engine "load" "assets/bunny" #(prn "load finished"))
+  (on-event engine :load "assets/bunny" #(prn "load finished"))
   (prn "loading"))

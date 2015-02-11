@@ -13,6 +13,7 @@
             [cider/cider-nrepl "0.7.0"]
             [com.cemerick/austin "0.1.5"]]
   :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
+  :clean-targets ["out" "compiled"]
   :cljsbuild {
     :builds [{:id "tin"
               :source-paths ["src"]

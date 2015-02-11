@@ -428,7 +428,7 @@
         asset-loader (AssetLoader. (to-array asset-list))
         onload (fn []
                  (publish-event! engine-state (new-event :identifier identifier
-                                                         :event-name "load"))
+                                                         :event-name :load))
                  (when messages
                    (put-messages! engine-state messages)))]
     (.addEventListener asset-loader "onComplete" onload)
@@ -556,7 +556,8 @@
                    (set! (.-mouseupoutside object) callback)
                    (set! (.-touchendoutside object) callback))))
 
-; TODO: Support lists of callbacks for multiple publish calls.
+; TODO: Support lists of callbacks for multiple publish calls on the same
+; event/identifer pair.
 (defn- handle-publish-message
   [{display-objects :display-objects :as engine-state}
    [:publish_ identifier & {:keys [query event]}]]
@@ -596,7 +597,7 @@
   [:render & object-exprs]
 
   ; Update existing display objects
-  [:update identifier properties {:function f}]
+  [:update identifier properties :function f]
 
   ; Load assets, automatically publish on the provided identifier on completion.
   [:load identifier [assets] [:then & messages]]

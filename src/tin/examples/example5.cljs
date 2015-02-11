@@ -1,6 +1,6 @@
 (ns tin.examples.example5
   (:require
-   [tin.new :refer [subscribe-to-event!]]
+   [tin.new :refer [subscribe-to-event! put-messages!]]
    [cljs.core.async :refer [chan]])
   (:require-macros [cljs.core.async.macros :refer [go alt!]]))
 
@@ -11,14 +11,22 @@
    {:button-mode? true, :anchor [:point 0.5 0.5], :position [:point x y]}])
 
 (def messages
-  [:render (button 1 400 100) (button 2 400 300) (button 3 400 500)])
+  [
+   [:render (button 1 400 100) (button 2 400 300) (button 3 400 500)]
+   [:publish "buttons" :event [:mouse-over]]
+   [:publish "buttons" :event [:mouse-out]]
+   [:publish "buttons" :event [:click-start]]
+   [:publish "buttons" :event [:click-end]]])
 
 (defn set-texture [identifier name]
   [:update identifier
    {:texture [:texture :image (str "resources/example5/" name ".png")]}])
 
 (defn example5
-  [engine])
+  [engine]
+  (put-messages! engine messages)
+  (let [channel (chan)]
+    (subscribe-to-event! engine channel :mouse-over "buttons")))
 
 ;; (defn button [i x y]
 ;;   [:sprite (str "button" i) [:texture [:image "resources/example5/button.png"]]
