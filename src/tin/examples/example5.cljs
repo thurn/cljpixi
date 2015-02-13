@@ -27,10 +27,13 @@
   (put-messages! engine messages)
   (let [channel (chan)]
     (subscribe-to-event! engine channel :mouse-over "buttons")
+    (subscribe-to-event! engine channel :mouse-out "buttons")
+    (subscribe-to-event! engine channel :click-start "buttons")
+    (subscribe-to-event! engine channel :click-end "buttons")
     (go
       (while true
-        (let [{identifier :identifier} (<! channel)]
-          (prn identifier))))))
+        (let [{identifier :identifier event :event-name} (<! channel)]
+          (prn "identifier" identifier "event" event ))))))
 
 ;; (defn button [i x y]
 ;;   [:sprite (str "button" i) [:texture [:image "resources/example5/button.png"]]
