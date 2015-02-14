@@ -23,7 +23,7 @@
    {:texture [:texture :image (str "resources/example5/" name ".png")]}])
 
 (defn example5
-  [engine]
+  [{render-channel :render-channel :as engine}]
   (put-messages! engine messages)
   (let [channel (chan)]
     (subscribe-to-event! engine channel :mouse-over "buttons")
@@ -33,7 +33,15 @@
     (go
       (while true
         (let [{identifier :identifier event :event-name} (<! channel)]
-          (prn "identifier" identifier "event" event ))))))
+          (case event
+            :mouse-over
+              (>! render-channel (set-texture identifier "buttonOver"))
+            :mouse-out
+              (>! render-channel (set-texture identifier "button"))
+            :click-start
+              (>! render-channel (set-texture identifier "buttonDown"))
+            :click-end
+              (>! render-channel (set-texture identifier "buttonOver"))))))))
 
 ;; (defn button [i x y]
 ;;   [:sprite (str "button" i) [:texture [:image "resources/example5/button.png"]]

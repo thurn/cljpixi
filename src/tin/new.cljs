@@ -412,8 +412,10 @@
 ;;;;; Update Message ;;;;;
 
 (defn- handle-update-message
-  [engine-state [:update_ identifier properties &
-                 {:keys [function] :or {function overwrite}}]])
+  [{display-objects :display-objects}
+   [:update_ identifier properties & {:keys [function]}]]
+  (doseq [object (objects-for-identifier display-objects identifier)]
+    (update-properties! object properties function)))
 
 ;;;;; Load Message ;;;;;
 
@@ -422,7 +424,7 @@
   |event-listeners| under identifier |identifier|. Messages in |messages| will
   put onto the render channel after load."
   [{event-listeners :event-listeners :as engine-state} [:load_ identifier assets
-                                                    [:then_ & messages]]]
+                                                        [:then_ & messages]]]
   (let [AssetLoader (.-AssetLoader js/PIXI)
         asset-list (if-not (sequential? assets) [assets])
         asset-loader (AssetLoader. (to-array asset-list))
