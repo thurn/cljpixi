@@ -28,7 +28,7 @@
     - event-listeners: An atom containing a map from event names to maps from
       identifiers to lists of channels which have subscribed to events with the
       associated name and identifier.
-    - render-channel: The cannel onto which rendering messages should be
+    - render-channel: The channel onto which rendering messages should be
       published."
   [& {:keys [stage renderer display-objects event-listeners render-channel]}]
   (EngineState. stage renderer display-objects event-listeners render-channel))
@@ -420,7 +420,7 @@
 ;;;;; Load Message ;;;;;
 
 (defn- handle-load-message
-  "Loads the resources in |assets| and then publishes an event named 'load' on
+  "Loads the resources in |assets| and then publishes an event named :load on
   |event-listeners| under identifier |identifier|. Messages in |messages| will
   put onto the render channel after load."
   [{event-listeners :event-listeners :as engine-state} [:load_ identifier assets
@@ -575,7 +575,11 @@
 ;;;;; Clear Message ;;;;;
 
 (defn- handle-clear-message
-  [engine-state [:clear_]])
+  [{stage :stage :as engine-state} [:clear_]]
+  (while (not (zero? (.-length (.-children stage))))
+    (.removeChild stage (aget (.-children stage) 0)))
+  (reset! (:display-objects engine-state) {})
+  (reset! (:event-listeners engine-state) {}))
 
 ;;;;; Message Dispatch ;;;;;
 
@@ -621,7 +625,7 @@
   ; matching object to a map from property names to property values.
   [:publish identifier :query query :event event-expr]
 
-  ; Remove everything from the stage
+  ; Remove everything from the stage. Cancel all listeners.
   [:clear]
 
   ; Object expressions
