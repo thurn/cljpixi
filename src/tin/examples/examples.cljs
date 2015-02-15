@@ -1,6 +1,7 @@
 (ns tin.examples
   (:require
-   [tin.new :refer [initialize new-engine-configuration]]
+   [tin.new :refer [initialize new-engine-configuration
+                    clear-all-event-listeners!]]
    [tin.examples.example1 :refer [example1]]
    [tin.examples.example2 :refer [example2]]
    [tin.examples.example3 :refer [example3]]
@@ -13,6 +14,7 @@
   URL hash."
   [{render-channel :render-channel :as engine}]
   (fn []
+    (clear-all-event-listeners! engine)
     (put! render-channel [:clear])
     (case (.-hash js/location)
       "" nil

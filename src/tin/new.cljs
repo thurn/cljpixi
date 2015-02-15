@@ -241,7 +241,8 @@
 
 (defn subscribe-to-event!
   "Subscribes |channel| to events named |event-name| published on |identifier|
-  or any child of |identifier|."
+  or any child of |identifier|. Remember that subscribing to an event is not a
+  channel-based action: the subscription starts immediately."
   [{event-listeners :event-listeners} channel event-name identifier]
   (swap! event-listeners
          (update-listeners true channel event-name identifier)))
@@ -252,6 +253,11 @@
   [{event-listeners :event-listeners} channel event-name identifier]
   (swap! event-listeners
          (update-listeners false channel event-name identifier)))
+
+(defn clear-all-event-listeners!
+  "Removes all listeners from |event-listeners|."
+  [{event-listeners :event-listeners}]
+  (reset! event-listeners {}))
 
 (defn on-event
   "Run |function| the first time an event occurs named |event-name| on
@@ -578,8 +584,7 @@
   [{stage :stage :as engine-state} [:clear_]]
   (while (not (zero? (.-length (.-children stage))))
     (.removeChild stage (aget (.-children stage) 0)))
-  (reset! (:display-objects engine-state) {})
-  (reset! (:event-listeners engine-state) {}))
+  (reset! (:display-objects engine-state) {}))
 
 ;;;;; Message Dispatch ;;;;;
 
@@ -625,7 +630,8 @@
   ; matching object to a map from property names to property values.
   [:publish identifier :query query :event event-expr]
 
-  ; Remove everything from the stage. Cancel all listeners.
+  ; Remove everything from the stage. Note: This does not cancel event
+  ; listeners, see clear-all-event-listeners! for that.
   [:clear]
 
   ; Object expressions
