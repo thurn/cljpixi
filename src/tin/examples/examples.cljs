@@ -7,6 +7,7 @@
    [tin.examples.example3 :refer [example3]]
    [tin.examples.example4 :refer [example4]]
    [tin.examples.example5 :refer [example5]]
+   [tin.examples.example6 :refer [example6]]
    [cljs.core.async :refer [put!]]))
 
 (defn change-example-fn
@@ -23,6 +24,7 @@
       "#example3" (example3 engine)
       "#example4" (example4 engine)
       "#example5" (example5 engine)
+      "#example6" (example6 engine)
       )))
 
 (defn ^:export main []

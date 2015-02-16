@@ -242,10 +242,27 @@
 (defn subscribe-to-event!
   "Subscribes |channel| to events named |event-name| published on |identifier|
   or any child of |identifier|. Remember that subscribing to an event is not a
-  channel-based action: the subscription starts immediately."
-  [{event-listeners :event-listeners} channel event-name identifier]
+  channel-based action: the subscription starts immediately.
+
+  |query| should be a map from identifiers to sequences of properties. The
+  properties will be looked up on each object matching the identifier, and the
+  event object will be published with a map from the identifier of each
+  matching object to a map from property names to property values."
+  [{event-listeners :event-listeners} channel &
+   {:keys [event-name identifier query]}]
   (swap! event-listeners
          (update-listeners true channel event-name identifier)))
+
+(defn subscribe-to-events!
+  "Subscribes |channel| to each event in |events| on each identifier in
+  |identifiers| as by subscribe-to-event!."
+  [engine channel & {:keys [events identifiers query]}]
+  (doseq [identifier identifiers]
+    (doseq [event events]
+      (subscribe-to-event! engine channel
+                           :event-name event
+                           :identifier identifier
+                           :query query))))
 
 (defn unsubscribe-from-event!
   "Unsubscribes |channel| from events named |event-name| published on
@@ -262,10 +279,13 @@
 (defn on-event
   "Run |function| the first time an event occurs named |event-name| on
   |identifier| or any child of |identifier|, passing the event as an argument to
-  |function|."
-  [engine event-name identifier function]
+  |function|. |query| behaves as in subscribe-to-event!."
+  [engine & {:keys [event-name identifier function query]}]
   (let [channel (chan)]
-    (subscribe-to-event! engine channel event-name identifier)
+    (subscribe-to-event! engine channel
+                         :event-name event-name
+                         :identifier identifier
+                         :query query)
     (go
       (let [event (<! channel)]
         (unsubscribe-from-event! engine channel event-name identifier)
@@ -281,6 +301,13 @@
       (recur (concat result (listener-map
                              (clojure.string/join "/" identifiers)))
              (drop-last identifiers)))))
+
+(defn- perform-query
+  "Performs |query|, which should be a map from identifiers to sequences of
+  properties. The result will be a map from identifiers to maps from property
+  names to property values."
+  [engine-state query]
+  {})
 
 (defn publish-event!
   [{event-listeners :event-listeners}
@@ -506,22 +533,13 @@
 
 ;;;;; Publish Message ;;;;;
 
-(defn- perform-query
-  "Performs |query|, which should be a map from identifiers to sequences of
-  properties. The result will be a map from identifiers to maps from property
-  names to property values."
-  [engine-state query]
-  {})
-
 (defn- event-callback-fn
   "Returns a callback function to invoke when an input event occurs."
-  [engine-state [event-name & _] identifier query]
+  [engine-state [event-name & _] identifier]
   (fn [data]
-    (let [query-result (perform-query engine-state query)]
-      (publish-event! engine-state (new-event :identifier identifier
-                                              :event-name event-name
-                                              :event-data data
-                                              :query-result query-result)))))
+    (publish-event! engine-state (new-event :identifier identifier
+                                            :event-name event-name
+                                            :event-data data))))
 
 (defn- get-recognizer-constructor
   "Looks up the Hammer.js constructor function matching the provided name,
@@ -568,12 +586,11 @@
 ; event/identifer pair.
 (defn- handle-publish-message
   [{display-objects :display-objects :as engine-state}
-   [:publish_ identifier & {:keys [query event]}]]
+   [:publish_ identifier event]]
   (doseq [{object :object object-identifier :identifier}
           (objects-and-identifiers-for-identifier display-objects identifier)]
     (impersonate-dom-node! object)
-    (let [callback (event-callback-fn engine-state event object-identifier
-                                      query)]
+    (let [callback (event-callback-fn engine-state event object-identifier)]
       (if (is-recognizer? (first event))
         (add-recognizer-event-handler! object event callback)
         (add-standard-event-handler! object event callback)))))
@@ -621,14 +638,8 @@
   ; Request that the objects matching 'identifier' start publishing events
   ; matching the provided event expression. Events will be available under
   ; EventTopic consisting of the identifier and event name. Multiple calls to
-  ; :publish for the same topic have no effect except merging the provided query
-  ; with any existing queries.
-
-  ; 'query' should be a map from identifiers to sequences of properties. The
-  ; properties will be looked up on each object matching the identifier, and the
-  ; event object will be published with a map from the identifier of each
-  ; matching object to a map from property names to property values.
-  [:publish identifier :query query :event event-expr]
+  ; :publish for the same event have no effect.
+  [:publish identifier event-expr]
 
   ; Remove everything from the stage. Note: This does not cancel event
   ; listeners, see clear-all-event-listeners! for that.
