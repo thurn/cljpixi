@@ -5,7 +5,7 @@
    [tin.events :refer [impersonate-dom-node!]]
    [clojure.set :refer [union]]
    [clojure.string]
-   [cljs.core.async :refer [<! >! chan close! sliding-buffer put!
+   [cljs.core.async :refer [<! >! chan close! sliding-buffer
                             alts! timeout pub sub]])
   (:require-macros [cljs.core.async.macros :refer [go]]
                    [cljs.core.match.macros :refer [match]]))
@@ -124,7 +124,8 @@
   "Convenience function to put the messages from |messages| onto the render
   channel."
   [{render-channel :render-channel} messages]
-  (doseq [message messages] (put! render-channel message)))
+  (go
+    (doseq [message messages] (>! render-channel message))))
 
 ;;;;; Helper Functions ;;;;;
 
@@ -230,14 +231,30 @@
   [& {:keys [identifier event-name event-data query-result]}]
   (Event. identifier event-name event-data query-result))
 
-(defn- update-listeners
-  "Returns a function to either conj or disj |channel| onto the provided
-   listeners depending on whether |conj?| is true."
-  [conj? channel event-name identifier]
+(defrecord EventSubscriber [channel query])
+
+(defn- new-event-subscriber
+  "Constructor function for the EventSubscriber record type. Keys:
+
+    - channel: The channel listening for event updates.
+    - query: The query for the event (refer to subscribe-to-event!)."
+  [& {:keys [channel query]}])
+
+(defn add-listener-fn
+  "Returns a function to conj |subscriber| onto the provider listeners."
+  [subscriber event-name identifier]
   (fn [listeners]
     (assoc-in listeners [event-name identifier]
-              ((if conj? conj disj)
-               (get-in listeners [event-name identifier] #{}) channel))))
+              (conj (get-in listeners [event-name identifier])
+                    subscriber))))
+
+(defn remove-listener-fn
+  "Returns a function to remove |subscriber| from the provided listeners."
+  [channel event-name identifier]
+  (fn [listeners]
+    (assoc-in listeners [event-name identifier]
+              (remove #(= channel (:channel %))
+                      (get-in listeners [event-name identifier])))))
 
 (defn subscribe-to-event!
   "Subscribes |channel| to events named |event-name| published on |identifier|
@@ -250,8 +267,8 @@
   matching object to a map from property names to property values."
   [{event-listeners :event-listeners} channel &
    {:keys [event-name identifier query]}]
-  (swap! event-listeners
-         (update-listeners true channel event-name identifier)))
+  (let [subscriber (new-event-subscriber channel query)]
+    (swap! event-listeners (add-listener-fn subscriber event-name identifier))))
 
 (defn subscribe-to-events!
   "Subscribes |channel| to each event in |events| on each identifier in
@@ -267,9 +284,8 @@
 (defn unsubscribe-from-event!
   "Unsubscribes |channel| from events named |event-name| published on
   |identifier| or any child of |identifier|."
-  [{event-listeners :event-listeners} channel event-name identifier]
-  (swap! event-listeners
-         (update-listeners false channel event-name identifier)))
+  [{event-listeners :event-listeners} channel & {:keys [event-name identifier]}]
+  (swap! event-listeners (remove-listener-fn channel event-name identifier)))
 
 (defn clear-all-event-listeners!
   "Removes all listeners from |event-listeners|."
@@ -291,8 +307,8 @@
         (unsubscribe-from-event! engine channel event-name identifier)
         (function event)))))
 
-(defn- channels-matching-identifier
-  "Returns all channels stored in |listener-map| under any level of the
+(defn- subscribers-matching-identifier
+  "Returns all subscribers stored in |listener-map| under any level of the
    identifier path specified by |identifier|."
   [listener-map identifier]
   (loop [result [] identifiers (split-identifier identifier)]
@@ -313,9 +329,9 @@
   [{event-listeners :event-listeners}
    {event-name :event-name identifier :identifier :as event}]
   (go
-    (doseq [channel (channels-matching-identifier
-                     (@event-listeners event-name) identifier)]
-      (>! channel event))))
+    (doseq [subscriber (subscribers-matching-identifier
+                        (@event-listeners event-name) identifier)]
+      (>! (:channel subscriber) event))))
 
 ;;;;; Render Message ;;;;;
 
