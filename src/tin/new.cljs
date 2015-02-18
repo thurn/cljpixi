@@ -238,7 +238,8 @@
 
     - channel: The channel listening for event updates.
     - query: The query for the event (refer to subscribe-to-event!)."
-  [& {:keys [channel query]}])
+  [& {:keys [channel query]}]
+  (EventSubscriber. channel query))
 
 (defn add-listener-fn
   "Returns a function to conj |subscriber| onto the provider listeners."
@@ -267,7 +268,7 @@
   matching object to a map from property names to property values."
   [{event-listeners :event-listeners} channel &
    {:keys [event-name identifier query]}]
-  (let [subscriber (new-event-subscriber channel query)]
+  (let [subscriber (new-event-subscriber :channel channel :query query)]
     (swap! event-listeners (add-listener-fn subscriber event-name identifier))))
 
 (defn subscribe-to-events!
