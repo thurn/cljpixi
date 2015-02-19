@@ -265,7 +265,9 @@
   |query| should be a map from identifiers to sequences of properties. The
   properties will be looked up on each object matching the identifier, and the
   event object will be published with a map from the identifier of each
-  matching object to a map from property names to property values."
+  matching object to a map from property names to property values. The special
+  identifier '$self' can be used and will resolve to the object publishing the
+  event."
   [{event-listeners :event-listeners} channel &
    {:keys [event-name identifier query]}]
   (let [subscriber (new-event-subscriber :channel channel :query query)]
@@ -310,7 +312,7 @@
 
 (defn- subscribers-matching-identifier
   "Returns all subscribers stored in |listener-map| under any level of the
-   identifier path specified by |identifier|."
+  identifier path specified by |identifier|."
   [listener-map identifier]
   (loop [result [] identifiers (split-identifier identifier)]
     (if (or (empty? identifiers) (empty? listener-map))
@@ -319,12 +321,22 @@
                              (clojure.string/join "/" identifiers)))
              (drop-last identifiers)))))
 
+(defn- get-object-properties
+  "Looks up each property in |properties| on |display-object| and returns a map
+  from property names to property values."
+  [display-object properties])
+
 (defn- perform-query
   "Performs |query|, which should be a map from identifiers to sequences of
   properties. The result will be a map from identifiers to maps from property
-  names to property values."
-  [engine-state query]
-  {})
+  names to property values. Refer to subscribe-to-event! for details."
+  [{display-objects :display-objects} query]
+  (into
+   {}
+   (for [[identifier properties] query
+         {object :object object-id :identifier}
+         (objects-and-identifiers-for-identifier display-objects identifier)]
+     [object-id (get-object-properties object (query identifier))])))
 
 (defn publish-event!
   [{event-listeners :event-listeners}
@@ -457,6 +469,7 @@
   [{stage :stage display-objects :display-objects} [:render_ & object-exprs]]
   (doseq [[type identifier & _ :as object-expr] object-exprs
           :let [object (expression->object object-expr display-objects)]]
+    (set! (.-bunny js/window) object)
     (.addChild stage object)))
 
 ;;;;; Update Message ;;;;;
@@ -556,7 +569,7 @@
   (fn [data]
     (publish-event! engine-state (new-event :identifier identifier
                                             :event-name event-name
-                                            :event-data data))))
+                                            :event-data (js->clj data)))))
 
 (defn- get-recognizer-constructor
   "Looks up the Hammer.js constructor function matching the provided name,

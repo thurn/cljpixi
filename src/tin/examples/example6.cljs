@@ -17,16 +17,18 @@
     (bunny 500 300)]
    [:publish "bunnies" [:pan]]])
 
-(defn example6 [engine]
+(defn example6 [{render-channel :render-channel :as engine}]
   (put-messages! engine messages)
   (let [channel (chan)]
     (subscribe-to-event! engine channel
                          :event-name :pan
-                         :identifier "bunnies")
+                         :identifier "bunnies"
+                         :query {"bunnies/2" [:position]})
     (go
       (while true
-        (let [{identifier :identifier event :event-name} (<! channel)]
-          (prn identifier event))))))
+        (let [{identifier :identifier data :event-data} (<! channel)
+              center (data "center")]
+          (prn data))))))
 
 ;; (defn bunny [i x y]
 ;;   [:sprite (str "bunny" i)
