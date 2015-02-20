@@ -157,6 +157,18 @@
   [map]
   (clj->js (into {} (for [[key value] map] [(to-camelcase key) value]))))
 
+(defn- get-property
+  "Gets the property named |key| from |object|."
+  [object key]
+  (aget object (to-camelcase key)))
+
+(defn- object->expression
+  "Turns |object| into an expression (if possible)."
+  [object]
+  (cond
+   (instance? (.-Point js/PIXI) object) [:point (.-x object) (.-y object)]
+   :otherwise object))
+
 ;;;;; Identifiers ;;;;;
 
 (defn- split-identifier
@@ -324,7 +336,10 @@
 (defn- get-object-properties
   "Looks up each property in |properties| on |display-object| and returns a map
   from property names to property values."
-  [display-object properties])
+  [display-object properties]
+  (into {} (for [property properties]
+             [property (object->expression
+                        (get-property display-object property))])))
 
 (defn- perform-query
   "Performs |query|, which should be a map from identifiers to sequences of
@@ -338,23 +353,29 @@
          (objects-and-identifiers-for-identifier display-objects identifier)]
      [object-id (get-object-properties object (query identifier))])))
 
-(defn publish-event!
-  [{event-listeners :event-listeners}
+(defn- replace-$self
+  "Replaces occurences of the identifier '$self' in |query| with |identifier|."
+  [query identifier]
+  (if (query "$self")
+    (assoc (dissoc query "$self") identifier (query "$self"))
+    query))
+
+(defn- publish-event!
+  [{event-listeners :event-listeners :as engine-state}
    {event-name :event-name identifier :identifier :as event}]
   (go
     (doseq [subscriber (subscribers-matching-identifier
                         (@event-listeners event-name) identifier)]
-      (>! (:channel subscriber) event))))
+      (let [query (:query subscriber)
+            query-replacing-$self (replace-$self query identifier)
+            query-result (perform-query engine-state query-replacing-$self)
+            event-with-query-result (assoc event :query-result query-result)]
+        (>! (:channel subscriber) event-with-query-result)))))
 
 ;;;;; Render Message ;;;;;
 
 (declare expression-lift)
 (declare expression->object)
-
-(defn- get-property
-  "Gets the property named |key| from |object|."
-  [object key]
-  (aget object (to-camelcase key)))
 
 (defn- update-property!
   "Sets the value of a property to (|function| old-value |value|) where
@@ -447,13 +468,6 @@
       (expression->object value)
       (to-array (map to-object value)))
     value))
-
-(defn- object->expression
-  "Turns |object| into an expression (if possible)."
-  [object]
-  (cond
-   (instance? (.-Point js/PIXI) object) [:point (.-x object) (.-y object)]
-   :otherwise object))
 
 (defn- expression-lift
   "Wraps |function| in another function which will convert its arguments to
@@ -567,6 +581,8 @@
   "Returns a callback function to invoke when an input event occurs."
   [engine-state [event-name & _] identifier]
   (fn [data]
+    (when (not (.-ed js/window)) (set! (.-ed js/window) data))
+    (set! (.-stg js/window) (:stage engine-state))
     (publish-event! engine-state (new-event :identifier identifier
                                             :event-name event-name
                                             :event-data (js->clj data)))))

@@ -12,9 +12,10 @@
 (def messages
   [
    [:render
-    (bunny 100 300)
-    (bunny 300 300)
-    (bunny 500 300)]
+    [:container "container" {:position [:point 100 50]}
+     (bunny 0 100)
+     (bunny 200 100)
+     (bunny 400 100)]]
    [:publish "bunnies" [:pan]]])
 
 (defn example6 [{render-channel :render-channel :as engine}]
@@ -23,12 +24,14 @@
     (subscribe-to-event! engine channel
                          :event-name :pan
                          :identifier "bunnies"
-                         :query {"bunnies/2" [:position]})
+                         :query {"$self" [:position]})
     (go
       (while true
-        (let [{identifier :identifier data :event-data} (<! channel)
-              center (data "center")]
-          (prn data))))))
+        (let [event (<! channel)
+              identifier (:identifier event)
+              old-position (get-in event [:query-result identifier :position])
+              center (get-in event [:event-data "center"])]
+          (prn center))))))
 
 ;; (defn bunny [i x y]
 ;;   [:sprite (str "bunny" i)
