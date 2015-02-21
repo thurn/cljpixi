@@ -356,7 +356,7 @@
 (defn- replace-$self
   "Replaces occurences of the identifier '$self' in |query| with |identifier|."
   [query identifier]
-  (if (query "$self")
+  (if (get query "$self")
     (assoc (dissoc query "$self") identifier (query "$self"))
     query))
 
