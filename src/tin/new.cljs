@@ -586,6 +586,7 @@
         canvas-bounds (.getBoundingClientRect canvas-dom-node)
         top-canvas-offset (.-top canvas-bounds)
         left-canvas-offset (.-left canvas-bounds)
+        ; convert from screen coordinates to stage coordinates:
         canvas-relative-point (new-point [:point
                                           (- x left-canvas-offset)
                                           (- y top-canvas-offset)])]
