@@ -577,15 +577,58 @@
 
 ;;;;; Publish Message ;;;;;
 
+(defn- to-local-coordinates
+  "Converts a point in screen coordinates into the coordinate system that
+  |object| uses."
+  [{stage :stage} object [:point_ x y]]
+  (let [interaction-manager (.-interactionManager stage)
+        canvas-dom-node (.-interactionDOMElement interaction-manager)
+        canvas-bounds (.getBoundingClientRect canvas-dom-node)
+        top-canvas-offset (.-top canvas-bounds)
+        left-canvas-offset (.-left canvas-bounds)
+        canvas-relative-point (new-point [:point
+                                          (- x left-canvas-offset)
+                                          (- y top-canvas-offset)])]
+    (object->expression
+     ; For normal display objects, use parent's toLocal. For the stage itself,
+     ; simply use canvas-relative coordinates.
+     (if (.-parent object)
+       (.toLocal (.-parent object) canvas-relative-point)
+       canvas-relative-point))))
+
+(defn- process-event-data
+  "Pulls useful event data out of an event callback value into a clojure data
+   structure."
+  [engine-state event-object]
+  (let [data (js->clj event-object)
+        center-point [:point ((data "center") "x") ((data "center") "y")]
+        center (to-local-coordinates
+                engine-state (.-target event-object) center-point)
+        target-position
+        (object->expression (.-position (.-target event-object)))
+        result {
+                :center center
+                :target-position target-position
+                :direction (data "direction")
+                :pointer-type (data "pointerType")
+                :distance (data "distance")
+                :rotation (data "rotation")
+                :is-first? (data "isFirst")
+                :is-final? (data "isFinal")
+                :delta [:point (data "deltaX") (data "deltaY")]
+                :delta-time (data "deltaTime")
+                :velocity [:point (data "velocityX") (data "velocityY")]}]
+    (into {} (filter second result))))
+
 (defn- event-callback-fn
   "Returns a callback function to invoke when an input event occurs."
   [engine-state [event-name & _] identifier]
   (fn [data]
-    (when (not (.-ed js/window)) (set! (.-ed js/window) data))
-    (set! (.-stg js/window) (:stage engine-state))
-    (publish-event! engine-state (new-event :identifier identifier
-                                            :event-name event-name
-                                            :event-data (js->clj data)))))
+    (let [processed-event-data (process-event-data engine-state data)]
+      (publish-event! engine-state
+                      (new-event :identifier identifier
+                                 :event-name event-name
+                                 :event-data processed-event-data)))))
 
 (defn- get-recognizer-constructor
   "Looks up the Hammer.js constructor function matching the provided name,

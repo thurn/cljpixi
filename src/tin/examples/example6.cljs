@@ -23,15 +23,11 @@
   (let [channel (chan)]
     (subscribe-to-event! engine channel
                          :event-name :pan
-                         :identifier "bunnies"
-                         :query {"$self" [:position]})
+                         :identifier "bunnies")
     (go
       (while true
-        (let [event (<! channel)
-              identifier (:identifier event)
-              old-position (get-in event [:query-result identifier :position])
-              center (get-in event [:event-data "center"])]
-          (prn center))))))
+        (let [event (<! channel)]
+          (prn (:center (:event-data event))))))))
 
 ;; (defn bunny [i x y]
 ;;   [:sprite (str "bunny" i)
