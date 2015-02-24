@@ -27,6 +27,5 @@
     (go
       (while true
         (let [{identifier :identifier event-data :event-data} (<! channel)]
-          (go
-            (>! render-channel
-                [:update identifier {:position (:center event-data)}])))))))
+          (>! render-channel
+              [:update identifier {:position (:center event-data)}]))))))

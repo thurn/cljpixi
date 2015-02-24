@@ -587,19 +587,20 @@
         top-canvas-offset (.-top canvas-bounds)
         left-canvas-offset (.-left canvas-bounds)
         ; convert from screen coordinates to stage coordinates:
-        canvas-relative-point (new-point [:point
-                                          (- x left-canvas-offset)
-                                          (- y top-canvas-offset)])]
-    (object->expression
-     ; For normal display objects, use parent's toLocal. For the stage itself,
-     ; simply use canvas-relative coordinates.
-     (if (.-parent object)
-       (.toLocal (.-parent object) canvas-relative-point)
-       canvas-relative-point))))
+        stage-coordinates [:point
+                               (- x left-canvas-offset)
+                               (- y top-canvas-offset)]]
+    ; If the object has a parent AND that parent is not the Stage, transform
+    ; the coordinates from Stage coordiantes into the coordinate system of the
+    ; parent.
+    (if (and (.-parent object) (not (= stage (.-parent object))))
+      (object->expression
+       (.toLocal (.-parent object) (new-point stage-coordinates)))
+      stage-coordinates)))
 
-(defn- process-event-data
-  "Pulls useful event data out of an event callback value into a clojure data
-   structure."
+(defn- process-hammer-js-event-data
+  "Pulls useful event data out of a Hammer.js event callback value into a
+   clojure data structure."
   [engine-state event-object]
   (let [data (js->clj event-object)
         center-point [:point ((data "center") "x") ((data "center") "y")]
@@ -621,11 +622,26 @@
                 :velocity [:point (data "velocityX") (data "velocityY")]}]
     (into {} (filter second result))))
 
+(defn- process-standard-js-event-data
+  "Pulls useful event data out of a pixi.js event callback vaule into a
+  clojure data structure."
+  [engine-state event-object]
+  (let [original-event (.-originalEvent event-object)
+        center-point [:point
+                      (.-clientX original-event)
+                      (.-clientY original-event)]]
+    {:center
+     (to-local-coordinates engine-state (.-target event-object) center-point)}))
+
 (defn- event-callback-fn
   "Returns a callback function to invoke when an input event occurs."
   [engine-state [event-name & _] identifier]
   (fn [data]
-    (let [processed-event-data (process-event-data engine-state data)]
+    (let [processed-event-data (if (.-center data)
+                                 (process-hammer-js-event-data
+                                  engine-state data)
+                                 (process-standard-js-event-data
+                                  engine-state data))]
       (publish-event! engine-state
                       (new-event :identifier identifier
                                  :event-name event-name
