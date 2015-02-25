@@ -379,16 +379,16 @@
 
 (defn- update-property!
   "Sets the value of a property to (|function| old-value |value|) where
-  old-value is the current value of the property. If the result is a clojure map
-  object, the update is instead recursively applied to each child of the
-  property."
+  old-value is the current value of the property."
   [object key value function]
   (let [lifted-fn (expression-lift function)
         old-val (get-property object key)
         new-val (lifted-fn old-val value)]
-    (if (map? new-val)
-      (doseq [[key value] new-val]
-        (update-property! (get-property object key) key value))
+    ;; Handle a few special case properties that require method calls.
+    (case key
+      :text (.setText object new-val)
+      :style (.setStyle object new-val)
+      :texture (.setTexture object new-val)
       (aset object (to-camelcase key) new-val))))
 
 (defn- update-properties!
@@ -397,7 +397,14 @@
   |object|."
   [object properties & {:keys [function] :or {function overwrite}}]
   (doseq [[key value] properties]
-    (update-property! object key value function))
+    ;; Handle a few special case properties that require method calls.
+    (cond
+      (= key :text)
+        (.setText object (function (.-text object) value))
+      (= key :style)
+        (.setStyle object (function (js->clj (.-style object)) value))
+      :otherwise
+        (update-property! object key value function)))
   object)
 
 (defn- new-point
@@ -439,6 +446,22 @@
     (set-object-for-identifier! display-objects tiling-sprite identifier)
     (update-properties! tiling-sprite properties)))
 
+(defn- new-text
+  "Instantiates and returns a new PIXI.Text object."
+  [display-objects [:text_ identifier text properties]]
+  (let [Text (.-Text js/PIXI)
+        text (Text. text)]
+    (set-object-for-identifier! display-objects text identifier)
+    (update-properties! text properties)))
+
+(defn- new-bitmap-text
+  "Instantiates and returns a new PIXI.BitmapText object."
+  [display-objects [:bitmap-text_ identifier text properties]]
+  (let [BitmapText (.-BitmapText js/PIXI)
+        text (BitmapText. text)]
+    (set-object-for-identifier! display-objects text identifier)
+    (update-properties! text properties)))
+
 (defn- new-movie-clip
   "Instantiates and returns a new PIXI.MovieClip object."
   [display-objects [:movie-clip_ identifier textures properties]]
@@ -454,6 +477,8 @@
        :container (new-container display-objects expression)
        :sprite (new-sprite display-objects expression)
        :tiling-sprite (new-tiling-sprite display-objects expression)
+       :text (new-text display-objects expression)
+       :bitmap-text (new-bitmap-text display-objects expression)
        :movie-clip (new-movie-clip display-objects expression)
        :point (new-point expression)
        :texture (new-texture expression))))
@@ -463,11 +488,12 @@
   will either be treated as an expression (if the first element is a keyword) or
   will be recursively converted to objects."
   [value]
-  (if (vector? value)
-    (if (keyword? (first value))
-      (expression->object value)
-      (to-array (map to-object value)))
-    value))
+  (cond
+   (vector? value) (if (keyword? (first value))
+                     (expression->object value)
+                     (to-array (map to-object value)))
+   (map? value) (clj->js value)
+   :otherwise value))
 
 (defn- expression-lift
   "Wraps |function| in another function which will convert its arguments to
@@ -758,6 +784,7 @@
   [:sprite identifier texture properties]
   [:tiling-sprite identifier texture width height properties]
   [:movie-clip identifier textures properties]
+  [:text identifier text properties]
   [:point x y]
   [:texture :image path]
   [:texture :canvas canvas]
