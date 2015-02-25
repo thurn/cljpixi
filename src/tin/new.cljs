@@ -637,6 +637,8 @@
   "Returns a callback function to invoke when an input event occurs."
   [engine-state [event-name & _] identifier]
   (fn [data]
+    ;; Use the presence of a ".center" property as a quick way to identify
+    ;; Hammer.js event callback data.
     (let [processed-event-data (if (.-center data)
                                  (process-hammer-js-event-data
                                   engine-state data)
@@ -763,8 +765,8 @@
 
   ; Animation expressions
   ; function is a binary function to apply to the current property value and
-  ; the value in |properties| to produce the final target value.
-  [:tween properties {:function m :duration d :ease e}]
+  ; the value in |property-map| to produce the final target value.
+  [:tween property-map {:function m :duration d :ease e}]
   [:play-clip frame?]
   [:stop-clip frame?]
   [:then & messages] ; Push arbitrary messages onto the render queue.
