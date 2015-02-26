@@ -1,17 +1,16 @@
 (ns tin.examples.example9
   (:require
-   [tin.core :refer [events]]
-   [tin.new :refer [put-messages!]]
-   [cljs.core.async :refer [put! chan sub]])
+   [tin.new :refer [put-messages! subscribe-to-event!]]
+   [cljs.core.async :refer [<! chan]])
   (:require-macros [cljs.core.async.macros :refer [go]]))
 
-(def walk-right [[:texture [:frame "walk_right_1"]]
-                 [:texture [:frame "walk_right_2"]]
-                 [:texture [:frame "walk_right_3"]]])
+(def walk-right [[:texture :frame "walk_right_1"]
+                 [:texture :frame "walk_right_2"]
+                 [:texture :frame "walk_right_3"]])
 
-(def walk-left [[:texture [:frame "walk_left_1"]]
-                [:texture [:frame "walk_left_2"]]
-                [:texture [:frame "walk_left_3"]]])
+(def walk-left [[:texture :frame "walk_left_1"]
+                [:texture :frame "walk_left_2"]
+                [:texture :frame "walk_left_3"]])
 
 (def walk-up [[:texture [:frame "walk_up_1"]]
               [:texture [:frame "walk_up_2"]]
@@ -22,20 +21,33 @@
                 [:texture [:frame "walk_down_3"]]])
 
 (def messages
-  [[:load "resources/example9/orc.json"]
-   [:stage-update {:events [[:tap :query {"player" [:position]}]]}]
-   [:movie-clip "player" walk-right
-    {:position [:point 100 100] :loop? true :animation-speed 0.2
-     :scale [:point 5 5]}]
-   [:animation "player" {} [:play-clip 0]]])
+  [[:load "assets" "resources/example9/orc.json"
+    [:then
+     [:render
+      [:movie-clip "player" walk-right
+       {:position [:point 100 100], :loop? true, :anchor [:point 0.5 0.5],
+        :animation-speed 0.2, :scale [:point 5 5]}]]
+     [:publish "$stage" [:tap]]]]])
 
-(def tap-channel (chan))
-(sub events "tap" tap-channel)
-
-(defn example9 [render-channel input-channel]
-  (put-messages! render-channel messages)
-  (go
-    (while true
-      (let [{identifier :identifier {{x "x"} "center"} :data} (<! tap-channel)]
-        (prn x)
-        (>! render-channel [:update "player" {:textures walk-left}])))))
+(defn example9 [{render-channel :render-channel :as engine}]
+  (put-messages! engine messages)
+  (let [channel (chan)]
+    (subscribe-to-event! engine channel
+                         :event-name :tap
+                         :identifier "$stage"
+                         :query {"player" [:position]})
+    (go (while true
+          (let [{event-data :event-data query-result :query-result} (<! channel)
+                {[:point_ tapped-x _] :center} event-data
+                {{[:point_ current-x _] :position} "player"} query-result]
+            (>! render-channel
+                [:messages
+                 [:update "player"
+                  {:textures (if (> current-x tapped-x) walk-left walk-right)}]
+                 [:animate "player" {}
+                  [:play-clip]
+                  [:tween {:position [:point tapped-x 100]}
+                   {:duration (Math/abs (* 3 (- current-x tapped-x)))}]
+                  [:then
+                   [:animate "player" {}
+                    [:stop-clip]]]]]))))))

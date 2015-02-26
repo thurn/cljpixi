@@ -108,9 +108,10 @@
                                       (:antialias? config))
         render-channel (chan channel-buffer-size)
         event-listeners (atom {})
+        display-objects (atom {"$stage" stage})
         engine-state (new-engine-state :stage stage
                                        :renderer renderer
-                                       :display-objects (atom {})
+                                       :display-objects display-objects
                                        :event-listeners event-listeners
                                        :render-channel render-channel)
         engine (new-engine :render-channel render-channel
@@ -397,14 +398,7 @@
   |object|."
   [object properties & {:keys [function] :or {function overwrite}}]
   (doseq [[key value] properties]
-    ;; Handle a few special case properties that require method calls.
-    (cond
-      (= key :text)
-        (.setText object (function (.-text object) value))
-      (= key :style)
-        (.setStyle object (function (js->clj (.-style object)) value))
-      :otherwise
-        (update-property! object key value function)))
+    (update-property! object key value function))
   object)
 
 (defn- new-point
@@ -448,9 +442,9 @@
 
 (defn- new-text
   "Instantiates and returns a new PIXI.Text object."
-  [display-objects [:text_ identifier text properties]]
+  [display-objects [:text_ identifier text-string properties]]
   (let [Text (.-Text js/PIXI)
-        text (Text. text)]
+        text (Text. text-string)]
     (set-object-for-identifier! display-objects text identifier)
     (update-properties! text properties)))
 
@@ -716,8 +710,6 @@
                    (set! (.-mouseupoutside object) callback)
                    (set! (.-touchendoutside object) callback))))
 
-; TODO: Support lists of callbacks for multiple publish calls on the same
-; event/identifer pair.
 (defn- handle-publish-message
   [{display-objects :display-objects :as engine-state}
    [:publish_ identifier event]]
@@ -735,7 +727,13 @@
   [{stage :stage :as engine-state} [:clear_]]
   (while (not (zero? (.-length (.-children stage))))
     (.removeChild stage (aget (.-children stage) 0)))
-  (reset! (:display-objects engine-state) {}))
+  (reset! (:display-objects engine-state) {"$stage" stage}))
+
+;;;;; Messages Message ;;;;;
+
+(defn- handle-messages-message
+  [engine [:messages_ & messages]]
+  (put-messages! engine messages))
 
 ;;;;; Message Dispatch ;;;;;
 
@@ -750,15 +748,21 @@
     :load (handle-load-message engine-state message)
     :animate (handle-animate-message engine-state message)
     :publish (handle-publish-message engine-state message)
-    :clear (handle-clear-message engine-state message)))
+    :clear (handle-clear-message engine-state message)
+    :messages (handle-messages-message engine-state message)))
 
 (comment
+  ; Special variables:
+  ; "$stage" is always the identifier of the stage.
+  ; "$self" is the identifier of the object publishing a message.
+  ; User-defined identifiers should not start with $.
+
   ; Top-level messages:
 
   ; Create display objects
   [:render & object-exprs]
 
-  ; Update existing display objects
+  ; Update existing display objects.
   [:update identifier properties :function f]
 
   ; Load assets, automatically publish on the provided identifier on completion.
@@ -778,6 +782,9 @@
   ; Remove everything from the stage. Note: This does not cancel event
   ; listeners, see clear-all-event-listeners! for that.
   [:clear]
+
+  ; Put all of the provdied messages onto the render channel.
+  [:messages & messages]
 
   ; Object expressions
   [:container identifier properties & children]
