@@ -29,7 +29,7 @@
                 :output-dir "compiled"
                 :optimizations :advanced
                 :pretty-print false
-                :externs ["externs/tweenjs.min.js" "externs/pixi.min.js"
+                :externs ["externs/tweenjs.min.js" "externs/pixi-2.2.3.min.js"
                           "externs/howler.min.js" "externs/hammer.js"]
                 :closure-warnings {:externs-validation :off
                                    :non-standard-jsdoc :off}
