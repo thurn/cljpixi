@@ -16,22 +16,22 @@
 ;;;;; API ;;;;;
 
 (defrecord EngineState
-  [stage renderer display-objects event-listeners render-channel])
+  [stage renderer engine-objects event-listeners render-channel])
 
 (defn- new-engine-state
   "Constructor function for the internal EngineState record type. Keys:
 
     - stage: The Pixi.js Stage object which coordinates all on-screen drawing.
     - renderer: The Pixi.js Renderer object, which draws objects to the canvas.
-    - display-objects: A tree of objects added to the engine indexed by
+    - engine-objects: A tree of objects added to the engine indexed by
       identifier.
     - event-listeners: An atom containing a map from event names to maps from
       identifiers to lists of channels which have subscribed to events with the
       associated name and identifier.
     - render-channel: The channel onto which rendering messages should be
       published."
-  [& {:keys [stage renderer display-objects event-listeners render-channel]}]
-  (EngineState. stage renderer display-objects event-listeners render-channel))
+  [& {:keys [stage renderer engine-objects event-listeners render-channel]}]
+  (EngineState. stage renderer engine-objects event-listeners render-channel))
 
 (defrecord EngineConfiguration
   [width height background-color view transparent? antialias? interactive?])
@@ -108,10 +108,10 @@
                                       (:antialias? config))
         render-channel (chan channel-buffer-size)
         event-listeners (atom {})
-        display-objects (atom {"$stage" stage})
+        engine-objects (atom {"$stage" stage})
         engine-state (new-engine-state :stage stage
                                        :renderer renderer
-                                       :display-objects display-objects
+                                       :engine-objects engine-objects
                                        :event-listeners event-listeners
                                        :render-channel render-channel)
         engine (new-engine :render-channel render-channel
@@ -179,8 +179,8 @@
 
 (defn- look-up-identifier
   "Looks up (via get-in) the value under |identifier|."
-  [display-objects identifier]
-  (get-in @display-objects (split-identifier identifier)))
+  [engine-objects identifier]
+  (get-in @engine-objects (split-identifier identifier)))
 
 (defn- objects-and-identifiers
   [object-map prefix]
@@ -193,17 +193,17 @@
 (defn- objects-and-identifiers-for-identifier
   "Returns a sequence of pairs of {:object object, :identifier identifier} for
   each object matching |identifier|."
-  [display-objects identifier]
-  (let [value (look-up-identifier display-objects identifier)]
+  [engine-objects identifier]
+  (let [value (look-up-identifier engine-objects identifier)]
     (if (map? value)
       (objects-and-identifiers value identifier)
       (list {:object value :identifier identifier}))))
 
 (defn- objects-for-identifier
-  "Returns a sequence of all display objects which match |identifier|."
-  [display-objects identifier]
+  "Returns a sequence of all engine objects which match |identifier|."
+  [engine-objects identifier]
   (map :object
-       (objects-and-identifiers-for-identifier display-objects identifier)))
+       (objects-and-identifiers-for-identifier engine-objects identifier)))
 
 (defn- set-object-for-identifier!
   "Looks up the value for |identifier|, and then
@@ -217,17 +217,17 @@
      '1' respectively.
 
   It is an error to try to create a child path under an existing leaf node."
-  [display-objects object identifier]
-  (when display-objects
+  [engine-objects object identifier]
+  (when engine-objects
     (let [parts (split-identifier identifier)
-          current-value (look-up-identifier display-objects identifier)]
+          current-value (look-up-identifier engine-objects identifier)]
       (cond
-       (nil? current-value) (swap! display-objects assoc-in parts object)
-       (map? current-value) (swap! display-objects
+       (nil? current-value) (swap! engine-objects assoc-in parts object)
+       (map? current-value) (swap! engine-objects
                                    assoc-in
                                    (conj parts (str (count current-value)))
                                    object)
-       :else (swap! display-objects assoc-in parts
+       :else (swap! engine-objects assoc-in parts
                     {"0" current-value, "1" object})))))
 
 ;;;;; Events ;;;;;
@@ -346,12 +346,12 @@
   "Performs |query|, which should be a map from identifiers to sequences of
   properties. The result will be a map from identifiers to maps from property
   names to property values. Refer to subscribe-to-event! for details."
-  [{display-objects :display-objects} query]
+  [{engine-objects :engine-objects} query]
   (into
    {}
    (for [[identifier properties] query
          {object :object object-id :identifier}
-         (objects-and-identifiers-for-identifier display-objects identifier)]
+         (objects-and-identifiers-for-identifier engine-objects identifier)]
      [object-id (get-object-properties object (query identifier))])))
 
 (defn- replace-$self
@@ -373,7 +373,7 @@
             event-with-query-result (assoc event :query-result query-result)]
         (>! (:channel subscriber) event-with-query-result)))))
 
-;;;;; Render Message ;;;;;
+;;;;; Create Message ;;;;;
 
 (declare expression-lift)
 (declare expression->object)
@@ -416,64 +416,64 @@
 
 (defn- new-container
   "Instantiates and returns a new PIXI.DisplayObjectContainer object."
-  [display-objects [:container_ identifier properties & children]]
+  [engine-objects [:container_ identifier properties & children]]
   (let [DisplayObjectContainer (.-DisplayObjectContainer js/PIXI)
         container (DisplayObjectContainer.)]
     (doseq [child children]
-      (.addChild container (expression->object child display-objects)))
-    (set-object-for-identifier! display-objects container identifier)
+      (.addChild container (expression->object child engine-objects)))
+    (set-object-for-identifier! engine-objects container identifier)
     (update-properties! container properties)))
 
 (defn- new-sprite
   "Instantiates and returns a new PIXI.Sprite object."
-  [display-objects [:sprite_ identifier texture properties]]
+  [engine-objects [:sprite_ identifier texture properties]]
   (let [Sprite (.-Sprite js/PIXI)
         sprite (Sprite. (new-texture texture))]
-    (set-object-for-identifier! display-objects sprite identifier)
+    (set-object-for-identifier! engine-objects sprite identifier)
     (update-properties! sprite properties)))
 
 (defn- new-tiling-sprite
   "Instantiates and returns a new PIXI.TilingSprite object."
-  [display-objects [:tiling-sprite_ identifier texture width height properties]]
+  [engine-objects [:tiling-sprite_ identifier texture width height properties]]
   (let [TilingSprite (.-TilingSprite js/PIXI)
         tiling-sprite (TilingSprite. (new-texture texture) width height)]
-    (set-object-for-identifier! display-objects tiling-sprite identifier)
+    (set-object-for-identifier! engine-objects tiling-sprite identifier)
     (update-properties! tiling-sprite properties)))
 
 (defn- new-text
   "Instantiates and returns a new PIXI.Text object."
-  [display-objects [:text_ identifier text-string properties]]
+  [engine-objects [:text_ identifier text-string properties]]
   (let [Text (.-Text js/PIXI)
         text (Text. text-string)]
-    (set-object-for-identifier! display-objects text identifier)
+    (set-object-for-identifier! engine-objects text identifier)
     (update-properties! text properties)))
 
 (defn- new-bitmap-text
   "Instantiates and returns a new PIXI.BitmapText object."
-  [display-objects [:bitmap-text_ identifier text properties]]
+  [engine-objects [:bitmap-text_ identifier text properties]]
   (let [BitmapText (.-BitmapText js/PIXI)
         text (BitmapText. text)]
-    (set-object-for-identifier! display-objects text identifier)
+    (set-object-for-identifier! engine-objects text identifier)
     (update-properties! text properties)))
 
 (defn- new-movie-clip
   "Instantiates and returns a new PIXI.MovieClip object."
-  [display-objects [:movie-clip_ identifier textures properties]]
+  [engine-objects [:movie-clip_ identifier textures properties]]
   (let [MovieClip (.-MovieClip js/PIXI)
         movie-clip (MovieClip. (to-array (map new-texture textures)))]
-    (set-object-for-identifier! display-objects movie-clip identifier)
+    (set-object-for-identifier! engine-objects movie-clip identifier)
     (update-properties! movie-clip properties)))
 
 (defn- expression->object
   ([expression] (expression->object expression nil))
-  ([expression display-objects]
+  ([expression engine-objects]
      (case (first expression)
-       :container (new-container display-objects expression)
-       :sprite (new-sprite display-objects expression)
-       :tiling-sprite (new-tiling-sprite display-objects expression)
-       :text (new-text display-objects expression)
-       :bitmap-text (new-bitmap-text display-objects expression)
-       :movie-clip (new-movie-clip display-objects expression)
+       :container (new-container engine-objects expression)
+       :sprite (new-sprite engine-objects expression)
+       :tiling-sprite (new-tiling-sprite engine-objects expression)
+       :text (new-text engine-objects expression)
+       :bitmap-text (new-bitmap-text engine-objects expression)
+       :movie-clip (new-movie-clip engine-objects expression)
        :point (new-point expression)
        :texture (new-texture expression))))
 
@@ -497,21 +497,21 @@
   (fn [& args]
     (to-object (apply function (map object->expression args)))))
 
-(defn- handle-render-message
-  "Processes the :render message by creating the requested display objects and
-  adding them to the Stage and to the display-objects tree."
-  [{stage :stage display-objects :display-objects} [:render_ & object-exprs]]
+(defn- handle-create-message
+  "Processes the :create message by creating the requested objects and
+  adding them to the Stage and to the engine-objects tree."
+  [{stage :stage engine-objects :engine-objects} [:create_ & object-exprs]]
   (doseq [[type identifier & _ :as object-expr] object-exprs
-          :let [object (expression->object object-expr display-objects)]]
+          :let [object (expression->object object-expr engine-objects)]]
     (set! (.-bunny js/window) object)
     (.addChild stage object)))
 
 ;;;;; Update Message ;;;;;
 
 (defn- handle-update-message
-  [{display-objects :display-objects}
+  [{engine-objects :engine-objects}
    [:update_ identifier properties & {:keys [function]}]]
-  (doseq [object (objects-for-identifier display-objects identifier)]
+  (doseq [object (objects-for-identifier engine-objects identifier)]
     (update-properties! object properties function)))
 
 ;;;;; Load Message ;;;;;
@@ -533,7 +533,7 @@
     (.addEventListener asset-loader "onComplete" onload)
     (.load asset-loader)))
 
-;;;;; Animate Message ;;;;;
+;;;;; Perform Message ;;;;;
 
 (defn- new-tween-target
   "Creates a new tween target javascript object containing the target values for
@@ -577,13 +577,13 @@
          (fn []
            (put-messages! engine-state messages))))
 
-(defn- handle-animate-message
-  "Processes the :animate message by creating a Tween object targeting each
-  display object matching |identifier| and then queueing each expression in
+(defn- handle-perform-message
+  "Processes the :perform message by creating a Tween object targeting each
+  engine object matching |identifier| and then queueing each expression in
   |animation-exprs| on that tween."
-  [{display-objects :display-objects :as engine-state}
-   [:animate_ identifier properties & animation-exprs]]
-  (doseq [object (objects-for-identifier display-objects identifier)]
+  [{engine-objects :engine-objects :as engine-state}
+   [:perform_ identifier properties & animation-exprs]]
+  (doseq [object (objects-for-identifier engine-objects identifier)]
     (let [Tween (.-Tween js/createjs)
           tween (.get Tween object (to-js-object properties))]
       (doseq [expression animation-exprs]
@@ -711,10 +711,11 @@
                    (set! (.-touchendoutside object) callback))))
 
 (defn- handle-publish-message
-  [{display-objects :display-objects :as engine-state}
+  [{engine-objects :engine-objects :as engine-state}
    [:publish_ identifier event]]
   (doseq [{object :object object-identifier :identifier}
-          (objects-and-identifiers-for-identifier display-objects identifier)]
+          (objects-and-identifiers-for-identifier engine-objects identifier)]
+    ;; TODO: verify object is a DisplayObject
     (impersonate-dom-node! object)
     (let [callback (event-callback-fn engine-state event object-identifier)]
       (if (is-recognizer? (first event))
@@ -727,7 +728,7 @@
   [{stage :stage :as engine-state} [:clear_]]
   (while (not (zero? (.-length (.-children stage))))
     (.removeChild stage (aget (.-children stage) 0)))
-  (reset! (:display-objects engine-state) {"$stage" stage}))
+  (reset! (:engine-objects engine-state) {"$stage" stage}))
 
 ;;;;; Messages Message ;;;;;
 
@@ -743,10 +744,10 @@
   message processing will be halted until a read on the channel completes."
   [engine-state message]
   (case (first message)
-    :render (handle-render-message engine-state message)
+    :create (handle-create-message engine-state message)
     :update (handle-update-message engine-state message)
     :load (handle-load-message engine-state message)
-    :animate (handle-animate-message engine-state message)
+    :perform (handle-perform-message engine-state message)
     :publish (handle-publish-message engine-state message)
     :clear (handle-clear-message engine-state message)
     :messages (handle-messages-message engine-state message)))
@@ -759,19 +760,20 @@
 
   ; Top-level messages:
 
-  ; Create display objects
-  [:render & object-exprs]
+  ; Create engine objects
+  [:create & object-exprs]
 
-  ; Update existing display objects.
+  ; Update existing engine objects.
   [:update identifier properties :function f]
 
   ; Load assets, automatically publish on the provided identifier on completion.
   [:load identifier [assets] [:then & messages]]
 
-  ; Start an animation affected the objects matching the provided identifier. An
-  ; animation is serial -- it is a sequence of actions to perform, one after the
-  ; other. To perform animations in parallel, use multiple animate messages.
-  [:animate identifier properties & animation-exprs]
+  ; Start a series of sequential actions affecting the objects matching the
+  ; provided identifier. The actions are serial: each completes before the next
+  ; begins. To perform actions in parallel, multiple [:perform] messages must be
+  ; employed.
+  [:perform identifier properties & animation-exprs]
 
   ; Request that the objects matching 'identifier' start publishing events
   ; matching the provided event expression. Events will be available under
@@ -783,7 +785,7 @@
   ; listeners, see clear-all-event-listeners! for that.
   [:clear]
 
-  ; Put all of the provdied messages onto the render channel.
+  ; Put all of the provided messages onto the render channel.
   [:messages & messages]
 
   ; Object expressions
@@ -796,6 +798,7 @@
   [:texture :image path]
   [:texture :canvas canvas]
   [:texture :frame frame-id]
+  [:sound identifier properties]
 
   ; Animation expressions
   ; function is a binary function to apply to the current property value and
@@ -803,6 +806,13 @@
   [:tween property-map {:function m :duration d :ease e}]
   [:play-clip frame?]
   [:stop-clip frame?]
+  [:play-sound]
+  [:pause-sound]
+  [:stop-sound]
+  [:mute-sound]
+  [:unmute-sound]
+  [:fade-in-sound target-volume duration]
+  [:fade-out-sound target-volume duration]
   [:then & messages] ; Push arbitrary messages onto the render queue.
 
   ; Event expressions

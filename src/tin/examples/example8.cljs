@@ -3,7 +3,7 @@
    [tin.new :refer [put-messages!]]))
 
 (def messages
-  [[:render
+  [[:create
     [:text "hello"
      "Hello, World"
      {:style {:font "bold 60px Arial" :fill "#cc00ff" :align "center"

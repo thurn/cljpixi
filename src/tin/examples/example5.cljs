@@ -12,7 +12,7 @@
 
 (def messages
   [
-   [:render (button 1 400 100) (button 2 400 300) (button 3 400 500)]
+   [:create (button 1 400 100) (button 2 400 300) (button 3 400 500)]
    [:publish "buttons" [:mouse-over]]
    [:publish "buttons" [:mouse-out]]
    [:publish "buttons" [:click-start]]

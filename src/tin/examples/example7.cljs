@@ -3,10 +3,10 @@
    [tin.new :refer [put-messages! point-binary-function]]))
 
 (def messages
-  [[:render
+  [[:create
     [:tiling-sprite "tiling-sprite"
      [:texture :image "resources/example7/p2.jpeg"] 800 600]]
-   [:animate "tiling-sprite" {:loop true}
+   [:perform "tiling-sprite" {:loop true}
     [:tween {:tile-position [:point 5000 5000]}
      {:duration 50000 :function (point-binary-function +)}]]])
 

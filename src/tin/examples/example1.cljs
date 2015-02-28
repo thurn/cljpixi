@@ -8,18 +8,18 @@
   [
    [:load "assets/bunny" "resources/example1/bunny.png"
     [:then
-     [:render
+     [:create
       [:sprite "bunnies/spinning"
        [:texture :frame "resources/example1/bunny.png"]
        {:anchor [:point 0.5 0.5] :position [:point 400 300]}]
       [:sprite "bunnies/moving"
        [:texture :frame "resources/example1/bunny.png"]
        {:anchor [:point 0.5 0.5] :position [:point 50 50]}]]
-     [:animate "bunnies/spinning" {:loop? true}
+     [:perform "bunnies/spinning" {:loop? true}
       [:tween {:rotation (* 2 Math/PI)}]]
-     [:animate "bunnies/moving" {:loop? true}
+     [:perform "bunnies/moving" {:loop? true}
       [:tween {:rotation (* 2 Math/PI) :scale [:point 2 2]} {:duration 5000}]]
-     [:animate "bunnies/moving" {:loop? true}
+     [:perform "bunnies/moving" {:loop? true}
       [:tween {:position [:point 500 500]}
        {:duration 5000, :function (point-binary-function +)}]]]]])
 

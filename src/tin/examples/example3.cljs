@@ -22,7 +22,7 @@
   [[:load "assets" "resources/example3/SpriteSheet.json"
     (into [:then]
           (concat
-           (list (into [:render] (map make-movie-clip (range 50))))
+           (list (into [:create] (map make-movie-clip (range 50))))
            (map make-animation (range 50))))]])
 
 (defn example3 [engine]

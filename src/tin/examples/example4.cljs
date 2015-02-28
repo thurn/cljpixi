@@ -23,7 +23,7 @@
 
 (def messages
   (concat
-   (list (into [:render] (map ball-sprite (range ball-count))))
+   (list (into [:create] (map ball-sprite (range ball-count))))
    (map ball-animation (range ball-count))))
 
 (defn example4 [engine]

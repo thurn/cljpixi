@@ -23,7 +23,7 @@
 (def messages
   [[:load "assets" "resources/example9/orc.json"
     [:then
-     [:render
+     [:create
       [:movie-clip "player" walk-right
        {:position [:point 100 100], :loop? true, :anchor [:point 0.5 0.5],
         :animation-speed 0.2, :scale [:point 5 5]}]]
@@ -44,10 +44,8 @@
                 [:messages
                  [:update "player"
                   {:textures (if (> current-x tapped-x) walk-left walk-right)}]
-                 [:animate "player" {}
+                 [:perform "player" {}
                   [:play-clip]
                   [:tween {:position [:point tapped-x 100]}
                    {:duration (Math/abs (* 3 (- current-x tapped-x)))}]
-                  [:then
-                   [:animate "player" {}
-                    [:stop-clip]]]]]))))))
+                  [:stop-clip]]]))))))

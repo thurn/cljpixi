@@ -11,7 +11,7 @@
 
 (def messages
   [
-   [:render
+   [:create
     [:container "container" {:position [:point 100 50]}
      (bunny 0 100)
      (bunny 200 100)
