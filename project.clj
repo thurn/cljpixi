@@ -30,7 +30,7 @@
                 :optimizations :advanced
                 :pretty-print false
                 :externs ["externs/tweenjs.min.js" "externs/pixi-2.2.3.min.js"
-                          "externs/howler.min.js" "externs/hammer.js"]
+                          "externs/howler-1.1.25.min.js" "externs/hammer.js"]
                 :closure-warnings {:externs-validation :off
                                    :non-standard-jsdoc :off}
                 ;:source-map "compiled/tin.sourcemap.js"

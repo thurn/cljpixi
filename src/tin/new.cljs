@@ -464,6 +464,13 @@
     (set-object-for-identifier! engine-objects movie-clip identifier)
     (update-properties! movie-clip properties)))
 
+(defn- new-sound
+  "Instantiates and returns a new howler.js Howl object."
+  [engine-objects [:sound_ identifier properties]]
+  (let [sound (js/Howl. (clj->js properties))]
+    (set-object-for-identifier! engine-objects sound identifier)
+    sound))
+
 (defn- expression->object
   ([expression] (expression->object expression nil))
   ([expression engine-objects]
@@ -474,6 +481,7 @@
        :text (new-text engine-objects expression)
        :bitmap-text (new-bitmap-text engine-objects expression)
        :movie-clip (new-movie-clip engine-objects expression)
+       :sound (new-sound engine-objects expression)
        :point (new-point expression)
        :texture (new-texture expression))))
 
@@ -558,24 +566,30 @@
      :or {function overwrite duration 1000 ease (tin.ease/linear)}}]]
   (.to tween (new-tween-target object properties function) duration ease))
 
-(defn- add-clip-expression!
+(defn- handle-clip-expression
   "Queues an action to play or stop a MovieClip for |object| onto |tween|."
-  [tween object [action frame]]
-  (.call tween
-         (fn []
-           (cond
-            (and (= action :play-clip) frame) (.gotoAndPlay object frame)
-            (= action :play-clip) (.play object)
-            (and (= action :stop-clip) frame) (.gotoAndStop object frame)
-            (= action :stop-clip) (.stop object)))))
+  [object [action frame]]
+  (cond
+   (and (= action :play-clip) frame) (.gotoAndPlay object frame)
+     (= action :play-clip) (.play object)
+   (and (= action :stop-clip) frame) (.gotoAndStop object frame)
+     (= action :stop-clip) (.stop object)))
 
-(defn- add-then-expression!
+(defn- handle-then-expression
   "Queues an action for |object| on |tween| to put the |messages| in the
   supplied :then expression onto the render channel."
-  [engine-state tween object [:then_ & messages]]
-  (.call tween
-         (fn []
-           (put-messages! engine-state messages))))
+  [engine-state object [:then_ & messages]]
+  (put-messages! engine-state messages))
+
+(defn- handle-sound-expression
+  "Queues an action to change the state of a sound |object| on |tween|."
+  [sound [action & arguments]]
+  (case action
+    :play-sound (.play sound)
+    :pause-sound (.pause sound)
+    :stop-sound (.stop sound)
+    :mute-sound (.mute sound)
+    :unmute-sound (.unmute sound)))
 
 (defn- handle-perform-message
   "Processes the :perform message by creating a Tween object targeting each
@@ -591,9 +605,12 @@
           :tween
             (add-tween-expression! tween object expression)
           (:play-clip :stop-clip)
-            (add-clip-expression! tween object expression)
+            (.call tween (partial handle-clip-expression object expression))
+          (:play-sound :pause-sound :stop-sound :mute-sound :unmute-sound)
+            (.call tween (partial handle-sound-expression object expression))
           :then
-            (add-then-expression! engine-state tween object expression))))))
+            (.call tween (partial handle-then-expression engine-state object
+                                  expression)))))))
 
 ;;;;; Publish Message ;;;;;
 
@@ -811,8 +828,6 @@
   [:stop-sound]
   [:mute-sound]
   [:unmute-sound]
-  [:fade-in-sound target-volume duration]
-  [:fade-out-sound target-volume duration]
   [:then & messages] ; Push arbitrary messages onto the render queue.
 
   ; Event expressions
