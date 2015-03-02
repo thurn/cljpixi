@@ -1,5 +1,5 @@
 (defproject tin "0.0.1-SNAPSHOT"
-  :description "A simple clojurescript game engine"
+  :description ""
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/clojurescript "0.0-2311"
                   :exclusions [org.apache.ant/ant]]
